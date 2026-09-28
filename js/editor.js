@@ -51,7 +51,7 @@
 
   // ---------------------------------------------------------------- 상태
 
-  let project = loadStored() || TEMPLATES.tasks.build();
+  let project = ensureId(loadStored() || TEMPLATES.tasks.build());
   let screenId = project.startScreen || project.screens[0].id;
   let selectedId = null;
   let clipboard = null;
@@ -76,6 +76,12 @@
     } catch (e) {
       return null;
     }
+  }
+
+  // 내보낸 앱의 가입 정보를 앱마다 따로 보관하기 위한 고유 id
+  function ensureId(data) {
+    if (data && !data.id) data.id = uid('p');
+    return data;
   }
 
   function isProject(data) {
@@ -147,7 +153,7 @@
   function loadProject(data) {
     undoStack.length = 0;
     redoStack = [];
-    project = data;
+    project = ensureId(data);
     screenId = project.startScreen || project.screens[0].id;
     selectedId = null;
     persist();
@@ -342,6 +348,7 @@
     box: '<rect x="4" y="4" width="16" height="16" rx="3"/>',
     tabbar: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 15h18M9 15v6M15 15v6"/>',
     divider: '<path d="M3 12h18"/>',
+    authForm: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   };
 
   function svgIcon(name, size, strokeWidth) {
@@ -419,6 +426,7 @@
       },
       svgIcon('screen', 16),
       el('span', { class: 'name', text: s.name }),
+      s.requireLogin ? el('span', { class: 'tag lock', title: '로그인해야 볼 수 있어요' }, svgIcon('authForm', 12, 2.4)) : null,
       isStart ? el('span', { class: 'tag', text: '시작' }) : null));
     });
   }
@@ -439,7 +447,8 @@
       list.appendChild(el('li', { class: c.id === selectedId ? 'active' : '', onclick: () => select(c.id) },
         svgIcon(c.type, 16),
         el('span', { class: 'name', text: def.label }),
-        el('span', { class: 'sub', text: describe(c) })));
+        el('span', { class: 'sub', text: describe(c) }),
+        c.showWhen && c.showWhen !== 'always' ? el('span', { class: 'tag', text: c.showWhen === 'guest' ? '게스트' : '로그인' }) : null));
     });
   }
 
@@ -741,6 +750,13 @@
         el('button', { onclick: () => { mutate(() => { comp.x = 0; comp.w = W; }); renderAll(); } }, svgIcon('widthFull', 16), '가로 꽉 채우기'),
         el('button', { onclick: () => { mutate(() => { comp.x = Math.round((W - comp.w) / 2); }); renderAll(); } }, svgIcon('centerH', 16), '가운데로'))));
 
+    root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '보이는 때' }),
+      segmented([['always', '항상'], ['guest', '로그인 전'], ['member', '로그인 후']], comp.showWhen || 'always', (v) => {
+        mutate(() => { if (v === 'always') delete comp.showWhen; else comp.showWhen = v; });
+        renderLayers();
+      }),
+      el('div', { class: 'hint', text: '미리보기와 내보낸 앱에서, 앱 사용자가 로그인했는지에 따라 이 블록을 보이거나 숨겨요' })));
+
     const groups = {};
     def.fields.forEach((f) => {
       if (f.show && !f.show(comp.props)) return;
@@ -777,6 +793,11 @@
       field('이름', name),
       field('배경색', colorControl(s.bg, theme.bg, (v) => { mutate(() => { s.bg = v; }, s.id + ':bg'); renderCanvas(); })),
       switchField('앱을 켜면 처음 보이는 화면', isStart, () => { mutate(() => { project.startScreen = s.id; }); renderAll(); }, isStart),
+      switchField('로그인해야 볼 수 있는 화면', s.requireLogin, (v) => {
+        mutate(() => { if (v) s.requireLogin = true; else delete s.requireLogin; });
+        renderScreens();
+        if (v && !RT.loginScreenOf(project)) toast('로그인 폼이 있는 화면을 만들어 주세요. 게스트는 그 화면으로 안내돼요');
+      }),
       el('div', { class: 'btn-row' },
         el('button', { onclick: () => duplicateScreen(s) }, svgIcon('copy', 16), '화면 복제'),
         el('button', { onclick: () => deleteScreen(s) }, svgIcon('trash', 16), '화면 삭제'))));
@@ -789,6 +810,13 @@
       [['pretendard', 'Pretendard'], ['system', '시스템 고딕'], ['serif', '명조'], ['mono', '고정폭']].map(([v, l]) => el('option', { value: v, text: l })));
     font.value = theme.font;
     const t = project.theme || {};
+
+    const loginSel = el('select', { onchange: () => { mutate(() => { if (loginSel.value) project.loginScreen = loginSel.value; else delete project.loginScreen; }); } },
+      el('option', { value: '', text: '자동 (로그인 폼이 있는 첫 화면)' }),
+      project.screens.map((sc) => el('option', { value: sc.id, text: sc.name })));
+    loginSel.value = RT.findScreen(project, project.loginScreen) ? RT.findScreen(project, project.loginScreen).id : '';
+    root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '앱 사용자 로그인' }),
+      field('로그인 화면', loginSel, '"로그인해야 볼 수 있는 화면"에 게스트가 들어가거나, 버튼 동작이 "로그인 화면으로"일 때 이 화면을 보여줘요')));
 
     root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '앱 전체 테마' }),
       field('대표 색', colorControl(t.primary === RT.DEFAULT_THEME.primary ? '' : t.primary, RT.DEFAULT_THEME.primary, setTheme('primary')), '헤더, 버튼, 내 말풍선처럼 색을 "기본"으로 둔 블록에 쓰여요'),

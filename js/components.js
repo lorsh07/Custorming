@@ -22,7 +22,7 @@ window.CM_COMPONENTS = (function () {
         { key: 'variant', label: '모양', type: 'select', options: [['filled', '채움'], ['outline', '테두리'], ['text', '글자만']] },
         {
           key: 'action', label: '누르면', type: 'select',
-          options: [['none', '아무것도 안 함'], ['go', '다른 화면으로 이동'], ['back', '뒤로 가기'], ['alert', '알림 띄우기'], ['send', '메시지 보내기'], ['link', '웹 링크 열기']],
+          options: [['none', '아무것도 안 함'], ['go', '다른 화면으로 이동'], ['back', '뒤로 가기'], ['alert', '알림 띄우기'], ['send', '메시지 보내기'], ['link', '웹 링크 열기'], ['login', '로그인 화면으로'], ['logout', '로그아웃']],
         },
         { key: 'target', label: '이동할 화면', type: 'screen', show: (p) => p.action === 'go' },
         { key: 'message', label: '내용', type: 'text', show: (p) => p.action === 'alert' || p.action === 'send' },
@@ -174,6 +174,21 @@ window.CM_COMPONENTS = (function () {
         { key: 'inputType', label: '종류', type: 'select', options: [['text', '일반'], ['password', '비밀번호'], ['email', '이메일'], ['number', '숫자']] },
         SIZE('radius', '모서리 둥글기', 0, 40),
       ],
+    },
+
+    authForm: {
+      label: '로그인 폼', group: '입력', w: 312, h: 540,
+      props: { mode: 'both', target: '', allowGuest: true, loginText: '로그인', signupText: '가입하기', radius: 12, color: '' },
+      fields: [
+        { key: 'mode', label: '보여줄 폼', type: 'select', options: [['both', '로그인 + 회원가입'], ['login', '로그인만'], ['signup', '회원가입만']] },
+        { key: 'target', label: '로그인하면 이동할 화면', type: 'screen', hint: '비워두면 원래 가려던 화면(없으면 시작 화면)으로 가요' },
+        { key: 'allowGuest', label: '"나중에 할게요" 버튼 표시', type: 'checkbox' },
+        { key: 'loginText', label: '로그인 버튼 글자', type: 'text' },
+        { key: 'signupText', label: '가입 버튼 글자', type: 'text' },
+        SIZE('radius', '모서리 둥글기', 0, 30),
+        COLOR('color', '버튼 색', 'primary'),
+      ],
+      note: '앱을 쓰는 사람이 가입하고 로그인할 수 있어요. 가입 정보는 그 사람의 기기에 저장돼요. 글자에 {이름}, {이메일}을 쓰면 로그인한 사람 정보로 바뀌어요.',
     },
 
     toggle: {

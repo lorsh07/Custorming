@@ -399,6 +399,96 @@ function createCustormingRuntime() {
       return card;
     },
 
+    authForm(p, ctx, comp) {
+      const accent = p.color || ctx.theme.primary;
+      const radius = px(p.radius, 12);
+      const box = h('form', { display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }, null, 'cm-fill cm-list');
+      box.noValidate = true;
+      const submitBtn = (label) => {
+        const b = h('button', {
+          height: '50px', flex: 'none', borderRadius: radius, background: accent, color: '#fff', fontWeight: '700', fontSize: '16px',
+        }, label, 'cm-press');
+        return b;
+      };
+      const user = ctx.auth.user();
+      if (user) {
+        // 이미 로그인한 상태
+        box.appendChild(h('div', { fontSize: '15px', color: ctx.theme.text, textAlign: 'center', padding: '8px 0' }, user.name + '님으로 로그인되어 있어요'));
+        const go = submitBtn('계속하기');
+        go.type = 'button';
+        go.onclick = () => ctx.afterLogin(p.target);
+        const out = h('button', { height: '44px', flex: 'none', background: 'none', color: '#64748b', fontSize: '14px' }, '로그아웃');
+        out.type = 'button';
+        out.onclick = () => ctx.action({ action: 'logout' });
+        box.append(go, out);
+        return box;
+      }
+
+      const both = (p.mode || 'both') === 'both';
+      const mode = both ? ctx.getState(comp.id + ':mode', 'login') : (p.mode === 'signup' ? 'signup' : 'login');
+      const signup = mode === 'signup';
+      if (both) {
+        const tabs = h('div', { display: 'flex', gap: '4px', padding: '4px', background: '#f1f5f9', borderRadius: '12px', flex: 'none' });
+        [['login', '로그인'], ['signup', '회원가입']].forEach(([m, label]) => {
+          const on = m === mode;
+          const b = h('button', {
+            flex: '1', height: '38px', borderRadius: '9px', fontSize: '14px', fontWeight: on ? '700' : '500',
+            background: on ? '#fff' : 'transparent', color: on ? accent : '#94a3b8', boxShadow: on ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
+          }, label);
+          b.type = 'button';
+          b.onclick = () => { ctx.setState(comp.id + ':mode', m); box.replaceWith(renderers.authForm(p, ctx, comp)); };
+          tabs.appendChild(b);
+        });
+        box.appendChild(tabs);
+      }
+      const field = (label, type, placeholder, auto) => {
+        const wrap = h('label', { display: 'flex', flexDirection: 'column', gap: '6px', flex: 'none' });
+        wrap.appendChild(h('span', { fontSize: '13px', color: '#64748b', fontWeight: '600' }, label));
+        const input = h('input', {
+          height: '46px', border: '1px solid #dcdce2', borderRadius: radius, padding: '0 14px', fontSize: '15px', background: '#fff', color: ctx.theme.text,
+        });
+        input.type = type;
+        input.placeholder = placeholder;
+        input.autocomplete = auto;
+        wrap.appendChild(input);
+        box.appendChild(wrap);
+        return input;
+      };
+      const name = signup ? field('이름', 'text', '홍길동', 'name') : null;
+      const email = field('이메일', 'email', 'you@example.com', 'email');
+      const pw = field('비밀번호', 'password', '8자 이상', signup ? 'new-password' : 'current-password');
+      const pw2 = signup ? field('비밀번호 확인', 'password', '한 번 더 입력', 'new-password') : null;
+      const error = h('div', { color: '#dc2626', fontSize: '13px', display: 'none', flex: 'none' });
+      box.appendChild(error);
+      const submit = submitBtn(signup ? (p.signupText || '가입하기') : (p.loginText || '로그인'));
+      submit.type = 'submit';
+      box.appendChild(submit);
+      if (p.allowGuest) {
+        const later = h('button', { height: '36px', flex: 'none', background: 'none', color: '#94a3b8', fontSize: '14px' }, '나중에 할게요');
+        later.type = 'button';
+        later.onclick = () => ctx.back();
+        box.appendChild(later);
+      }
+      box.onsubmit = (e) => {
+        e.preventDefault();
+        try {
+          if (signup) {
+            if (pw.value !== pw2.value) throw new Error('비밀번호 확인이 일치하지 않아요');
+            ctx.auth.signUp({ name: name.value, email: email.value, password: pw.value });
+          } else {
+            ctx.auth.logIn({ email: email.value, password: pw.value });
+          }
+          // 다음에 폼을 다시 볼 때는 로그인 탭부터
+          ctx.setState(comp.id + ':mode', 'login');
+          ctx.afterLogin(p.target);
+        } catch (err) {
+          error.textContent = err.message;
+          error.style.display = 'block';
+        }
+      };
+      return box;
+    },
+
     divider(p) {
       const wrap = h('div', { display: 'flex', alignItems: 'center' }, null, 'cm-fill');
       wrap.appendChild(h('div', { width: '100%', height: px(p.thickness, 1), background: p.color || 'rgba(0,0,0,.1)' }));
@@ -434,7 +524,10 @@ function createCustormingRuntime() {
         img.draggable = false;
         circle.appendChild(img);
       } else {
-        circle.textContent = p.text || '';
+        const chars = Array.from(p.text || '');
+        // 편집 화면에서 {이름} 같은 자리표시자는 사람 아이콘으로 보여준다
+        if (/\{[^}]+\}/.test(p.text || '')) circle.appendChild(icon('user', Math.round(size * 0.5)));
+        else circle.textContent = chars.length > 2 ? chars[0] : chars.join('');
       }
       return h('div', { display: 'flex' }, circle, 'cm-fill');
     },
@@ -448,7 +541,139 @@ function createCustormingRuntime() {
     },
   };
 
+  // ---------------------------------------------------------------- 앱 안의 계정
+
+  // SHA-256 (http 페이지처럼 crypto.subtle이 없는 곳에서도 동작하도록 직접 구현)
+  const SHA_K = [];
+  const SHA_H = [];
+  (function () {
+    const frac = (x) => ((x - Math.floor(x)) * 4294967296) >>> 0;
+    for (let n = 2, found = 0; found < 64; n++) {
+      let prime = true;
+      for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
+      if (!prime) continue;
+      if (found < 8) SHA_H[found] = frac(Math.pow(n, 1 / 2));
+      SHA_K[found++] = frac(Math.pow(n, 1 / 3));
+    }
+  })();
+
+  function sha256(str) {
+    const msg = new TextEncoder().encode(str);
+    const size = ((msg.length + 9 + 63) >> 6) << 6;
+    const buf = new Uint8Array(size);
+    buf.set(msg);
+    buf[msg.length] = 0x80;
+    const view = new DataView(buf.buffer);
+    const bits = msg.length * 8;
+    view.setUint32(size - 4, bits >>> 0);
+    view.setUint32(size - 8, Math.floor(bits / 4294967296));
+    const H = SHA_H.slice();
+    const w = new Uint32Array(64);
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let off = 0; off < size; off += 64) {
+      for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      let [a, b, c, d, e, f, g, hh] = H;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + SHA_K[i] + w[i]) | 0;
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      [a, b, c, d, e, f, g, hh].forEach((v, i) => { H[i] = (H[i] + v) | 0; });
+    }
+    return H.map((x) => (x >>> 0).toString(16).padStart(8, '0')).join('');
+  }
+
+  function hashPassword(password, salt) {
+    let out = sha256(salt + ':' + password);
+    for (let i = 0; i < 2000; i++) out = sha256(out + salt);
+    return out;
+  }
+
+  // 앱마다 따로, 이 기기(브라우저)에 가입 정보를 보관한다
+  function createAppAuth(project) {
+    const prefix = 'cm-app:' + (project.id || project.name || 'app');
+    const read = (key, fallback) => {
+      try { const raw = localStorage.getItem(prefix + key); return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
+    };
+    const write = (key, value) => {
+      try {
+        if (value == null) localStorage.removeItem(prefix + key);
+        else localStorage.setItem(prefix + key, JSON.stringify(value));
+      } catch (e) { /* 저장 공간이 없으면 이번 실행 동안만 유지 */ }
+    };
+    let session = read(':session', null);
+    const normalize = (email) => String(email || '').trim().toLowerCase();
+
+    function user() {
+      const u = session && read(':users', {})[session];
+      return u ? { name: u.name, email: u.email } : null;
+    }
+
+    function signUp(o) {
+      const name = String(o.name || '').trim();
+      const email = normalize(o.email);
+      if (!name) throw new Error('이름을 입력해 주세요');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('올바른 이메일 주소를 입력해 주세요');
+      if (String(o.password || '').length < 8) throw new Error('비밀번호는 8자 이상이어야 해요');
+      const users = read(':users', {});
+      if (users[email]) throw new Error('이미 가입된 이메일이에요. 로그인해 주세요');
+      const bytes = new Uint8Array(16);
+      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+      else bytes.forEach((_, i) => { bytes[i] = Math.floor(Math.random() * 256); });
+      const salt = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+      users[email] = { name, email, salt, hash: hashPassword(String(o.password), salt), createdAt: Date.now() };
+      write(':users', users);
+      session = email;
+      write(':session', email);
+      return user();
+    }
+
+    function logIn(o) {
+      const email = normalize(o.email);
+      const u = read(':users', {})[email];
+      if (!u || hashPassword(String(o.password || ''), u.salt) !== u.hash) throw new Error('이메일 또는 비밀번호가 맞지 않아요');
+      session = email;
+      write(':session', email);
+      return user();
+    }
+
+    function logOut() {
+      session = null;
+      write(':session', null);
+    }
+
+    return { user, signUp, logIn, logOut };
+  }
+
+  // {이름}, {이메일} 을 로그인한 사람 정보로 바꾼다
+  function fillProps(props, u) {
+    const out = {};
+    Object.keys(props).forEach((k) => {
+      const v = props[k];
+      out[k] = typeof v === 'string'
+        ? v.split('{이름}').join(u ? u.name : '게스트').split('{이메일}').join(u ? u.email : '')
+        : v;
+    });
+    return out;
+  }
+
+  function loginScreenOf(project) {
+    return findScreen(project, project.loginScreen) ||
+      project.screens.find((s) => s.components.some((c) => c.type === 'authForm')) || null;
+  }
+
   function renderComponent(comp, ctx) {
+    let props = comp.props || {};
+    if (ctx.live) {
+      const u = ctx.auth.user();
+      if ((comp.showWhen === 'guest' && u) || (comp.showWhen === 'member' && !u)) return null;
+      props = fillProps(props, u);
+    }
     const wrap = h('div', {
       left: comp.x + 'px', top: comp.y + 'px', width: comp.w + 'px', height: comp.h + 'px',
     }, null, 'cm-comp cm-' + comp.type);
@@ -456,7 +681,7 @@ function createCustormingRuntime() {
     const render = renderers[comp.type];
     if (render) {
       try {
-        wrap.appendChild(render(comp.props || {}, ctx, comp));
+        wrap.appendChild(render(props, ctx, comp));
       } catch (err) {
         wrap.appendChild(h('div', { color: 'red', fontSize: '11px' }, '렌더링 오류: ' + err.message));
       }
@@ -467,7 +692,10 @@ function createCustormingRuntime() {
   function renderScreen(screen, project, ctx) {
     const el = h('div', { background: screen.bg || ctx.theme.bg }, null, 'cm-screen');
     el.dataset.screen = screen.id;
-    screen.components.forEach((c) => el.appendChild(renderComponent(c, ctx)));
+    screen.components.forEach((c) => {
+      const node = renderComponent(c, ctx);
+      if (node) el.appendChild(node);
+    });
     return el;
   }
 
@@ -491,6 +719,7 @@ function createCustormingRuntime() {
       chatMessages: (comp) => parseMessages(comp.props.messages),
       registerChat: noop, send: noop, go: noop, back: noop, action: noop,
       getState: (id, fallback) => fallback, setState: noop,
+      auth: { user: () => null, signUp: noop, logIn: noop, logOut: noop }, afterLogin: noop,
     };
   }
 
@@ -503,8 +732,10 @@ function createCustormingRuntime() {
     styleStage(stage, project);
     root.appendChild(stage);
 
-    const state = { current: null, history: [], chats: {}, chatEls: {}, values: {} };
+    const state = { current: null, history: [], chats: {}, chatEls: {}, values: {}, pending: null };
     const theme = themeOf(project);
+    const auth = createAppAuth(project);
+    const startId = () => (findScreen(project, project.startScreen) || project.screens[0]).id;
 
     function screen() {
       return findScreen(project, state.current) || project.screens[0];
@@ -518,8 +749,15 @@ function createCustormingRuntime() {
 
     function go(ref, o) {
       o = o || {};
-      const target = findScreen(project, ref);
+      let target = findScreen(project, ref);
       if (!target) return toast('"' + ref + '" 화면을 찾을 수 없어요');
+      // 로그인해야 볼 수 있는 화면이면 로그인 화면을 먼저 보여주고, 로그인하면 돌아온다
+      if (target.requireLogin && !auth.user()) {
+        const login = loginScreenOf(project);
+        if (!login || login.id === target.id) return toast('로그인이 필요해요');
+        state.pending = target.id;
+        target = login;
+      }
       if (o.replace) state.history = [];
       else if (state.current && state.current !== target.id) state.history.push(state.current);
       state.current = target.id;
@@ -528,6 +766,7 @@ function createCustormingRuntime() {
 
     function back() {
       const prev = state.history.pop();
+      state.pending = null;
       if (prev) { state.current = prev; draw(); }
     }
 
@@ -568,6 +807,18 @@ function createCustormingRuntime() {
         case 'alert': return toast(p.message || '');
         case 'send': return p.message ? send(p.message) : null;
         case 'link': return p.url ? window.open(p.url, '_blank', 'noopener') : null;
+        case 'login': {
+          const login = loginScreenOf(project);
+          if (!login) return toast('로그인 폼이 있는 화면이 없어요');
+          if (auth.user()) return toast(auth.user().name + '님으로 로그인되어 있어요');
+          state.pending = state.current;
+          return go(login.id);
+        }
+        case 'logout':
+          if (!auth.user()) return toast('로그인되어 있지 않아요');
+          auth.logOut();
+          toast('로그아웃했어요');
+          return screen().requireLogin ? go(startId(), { replace: true }) : draw();
         default: return null;
       }
     }
@@ -577,7 +828,15 @@ function createCustormingRuntime() {
       get screen() { return screen(); },
       chatMessages,
       registerChat: (comp, el) => { state.chatEls[comp.id] = el; },
-      send, go, back, action, toast,
+      send, go, back, action, toast, auth,
+      // 로그인/가입이 끝나면 가려던 화면(없으면 지정한 화면, 그것도 없으면 시작 화면)으로 간다
+      afterLogin(target) {
+        const dest = state.pending || target || startId();
+        state.pending = null;
+        const u = auth.user();
+        go(dest, { replace: true });
+        if (u) toast(u.name + '님, 환영해요!');
+      },
       getState: (id, fallback) => (id in state.values ? state.values[id] : fallback),
       setState: (id, v) => { state.values[id] = v; },
     };
@@ -610,6 +869,6 @@ function createCustormingRuntime() {
   return {
     DEFAULT_SIZE, DEFAULT_THEME, FONTS, ICONS, icon,
     injectCSS, styleStage, renderScreen, renderComponent, staticContext, mount, boot,
-    themeOf, sizeOf, findScreen, parseMessages,
+    themeOf, sizeOf, findScreen, parseMessages, sha256, loginScreenOf,
   };
 }

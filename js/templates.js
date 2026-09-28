@@ -12,6 +12,12 @@ window.CM_TEMPLATES = (function () {
     return { id: window.cmUid('c'), type, x, y, w, h, props: Object.assign(defaults, props) };
   }
 
+  // 앱 사용자의 로그인 여부에 따라 보이게: 'guest' | 'member'
+  function only(when, c) {
+    c.showWhen = when;
+    return c;
+  }
+
   function screen(name, components, bg) {
     return { id: window.cmUid('s'), name, bg: bg || '', components };
   }
@@ -19,6 +25,7 @@ window.CM_TEMPLATES = (function () {
   function project(name, screens, theme) {
     return {
       version: 1,
+      id: window.cmUid('p'),
       name,
       size: { w: W, h: H },
       theme: Object.assign({ primary: '#3b82f6', bg: '#ffffff', text: '#0f172a', font: 'pretendard' }, theme),
@@ -41,8 +48,9 @@ window.CM_TEMPLATES = (function () {
           comp('box', 12, 12, 336, 124, { bg: '#f8fafc', radius: 20 }),
           comp('avatar', 28, 28, 36, 36, { text: '✓' }),
           comp('text', 74, 34, 180, 24, { text: 'MyTasks', size: 17, bold: true }),
-          comp('avatar', 300, 28, 36, 36, { text: '지', bg: '#0f172a' }),
-          comp('text', 28, 76, 300, 28, { text: '좋은 아침이에요, 지우님', size: 20, bold: true }),
+          only('member', comp('avatar', 300, 28, 36, 36, { text: '{이름}', bg: '#0f172a' })),
+          only('guest', comp('button', 264, 30, 76, 32, { label: '로그인', variant: 'outline', action: 'login', size: 14, radius: 16 })),
+          comp('text', 28, 76, 300, 28, { text: '좋은 아침이에요, {이름}님', size: 20, bold: true }),
           comp('text', 28, 104, 300, 20, { text: '오늘 할 일이 5개 있어요', size: 14, color: '#64748b' }),
           comp('stat', 12, 152, 336, 96, {}),
           comp('checklist', 12, 264, 336, 156, {}),
@@ -66,16 +74,25 @@ window.CM_TEMPLATES = (function () {
         ]);
         const profile = screen('프로필', [
           comp('header', 0, 0, W, 56, Object.assign({ title: '프로필' }, LIGHT_HEADER)),
-          comp('avatar', 140, 80, 80, 80, { text: '지', bg: '#0f172a' }),
-          comp('text', 24, 172, 312, 28, { text: '김지우', size: 20, bold: true, align: 'center' }),
-          comp('text', 24, 200, 312, 20, { text: 'jiwoo@example.com', size: 14, align: 'center', color: '#64748b' }),
+          comp('avatar', 140, 80, 80, 80, { text: '{이름}', bg: '#0f172a' }),
+          comp('text', 24, 172, 312, 28, { text: '{이름}', size: 20, bold: true, align: 'center' }),
+          comp('text', 24, 200, 312, 20, { text: '{이메일}', size: 14, align: 'center', color: '#64748b' }),
           comp('toggle', 0, 248, W, 52, { label: '마감 알림', on: true }),
           comp('toggle', 0, 300, W, 52, { label: '매일 아침 요약', on: true }),
           comp('toggle', 0, 352, W, 52, { label: '다크 모드', on: false }),
-          comp('button', 24, 428, 312, 48, { label: '로그아웃', variant: 'outline', action: 'alert', message: '로그아웃 되었어요' }),
+          comp('button', 24, 428, 312, 48, { label: '로그아웃', variant: 'outline', action: 'logout' }),
           tabbar(),
         ]);
-        return project('MyTasks', [home, tasks, alerts, profile]);
+        profile.requireLogin = true;
+        const login = screen('로그인', [
+          comp('header', 0, 0, W, 56, Object.assign({ title: '', showBack: true }, LIGHT_HEADER)),
+          comp('text', 24, 72, 312, 34, { text: '반가워요 👋', size: 26, bold: true }),
+          comp('text', 24, 110, 312, 22, { text: '로그인하면 내 프로필과 설정을 쓸 수 있어요', size: 15, color: '#64748b' }),
+          comp('authForm', 24, 148, 312, 540, {}),
+        ]);
+        const app = project('MyTasks', [home, tasks, alerts, profile, login]);
+        app.loginScreen = login.id;
+        return app;
       },
     },
 
@@ -142,25 +159,26 @@ window.CM_TEMPLATES = (function () {
       build() {
         const home = screen('홈', [
           comp('header', 0, 0, W, 56, { title: '홈', align: 'center' }),
-          comp('text', 24, 80, 312, 34, { text: '안녕하세요 👋', size: 24, bold: true }),
+          comp('text', 24, 80, 312, 34, { text: '안녕하세요, {이름}님 👋', size: 24, bold: true }),
           comp('text', 24, 116, 312, 24, { text: '오늘도 좋은 하루 보내세요.', size: 15, color: '#6e6e73' }),
           comp('card', 24, 160, 312, 110, { title: '오늘의 할 일', body: '• 앱 화면 구성하기\n• 색상 정하기' }),
           comp('card', 24, 286, 312, 110, { title: '공지사항', body: '새로운 기능이 추가되었어요!' }),
-          comp('button', 24, 660, 312, 48, { label: '로그아웃', variant: 'text', action: 'go', target: '' }),
+          comp('button', 24, 660, 312, 48, { label: '로그아웃', variant: 'text', action: 'logout' }),
         ], '#f4f4f8');
+        home.requireLogin = true;
 
         const login = screen('로그인', [
-          comp('avatar', 140, 110, 80, 80, { text: '✦' }),
-          comp('text', 24, 212, 312, 36, { text: '환영합니다', size: 26, bold: true, align: 'center' }),
-          comp('text', 24, 250, 312, 24, { text: '계정에 로그인하세요', size: 15, align: 'center', color: '#6e6e73' }),
-          comp('input', 24, 304, 312, 72, { label: '이메일', placeholder: 'you@example.com', inputType: 'email' }),
-          comp('input', 24, 388, 312, 72, { label: '비밀번호', placeholder: '비밀번호', inputType: 'password' }),
-          comp('button', 24, 488, 312, 52, { label: '로그인', action: 'go', target: home.id }),
-          comp('button', 24, 552, 312, 40, { label: '회원가입', variant: 'text', action: 'alert', message: '준비 중이에요!', size: 14 }),
+          comp('avatar', 150, 64, 60, 60, { text: '✦' }),
+          comp('text', 24, 140, 312, 36, { text: '환영합니다', size: 26, bold: true, align: 'center' }),
+          comp('text', 24, 178, 312, 24, { text: '로그인하거나 새로 가입하세요', size: 15, align: 'center', color: '#6e6e73' }),
+          comp('authForm', 24, 220, 312, 500, { allowGuest: false }),
         ]);
 
-        home.components[home.components.length - 1].props.target = login.id;
-        return project('로그인 앱', [login, home]);
+        // 시작 화면(홈)이 로그인을 요구하므로 앱을 켜면 로그인 화면부터 보인다
+        const app = project('로그인 앱', [login, home]);
+        app.startScreen = home.id;
+        app.loginScreen = login.id;
+        return app;
       },
     },
   };
