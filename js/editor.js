@@ -56,6 +56,7 @@
   let selectedId = null;
   let clipboard = null;
   let snapOn = true;
+  let viewAs = 'guest'; // 캔버스를 게스트/로그인한 사람 중 누구 입장에서 보여줄지
   let zoom = 1;
   const undoStack = [];
   let redoStack = [];
@@ -444,7 +445,18 @@
     if (!comps.length) list.appendChild(el('li', { class: 'empty', text: '아직 비어 있어요. 위에서 오브젝트를 추가하세요.' }));
     comps.forEach((c) => {
       const def = DEFS[c.type] || { label: c.type };
-      list.appendChild(el('li', { class: c.id === selectedId ? 'active' : '', onclick: () => select(c.id) },
+      list.appendChild(el('li', {
+        class: c.id === selectedId ? 'active' : '',
+        onclick: () => {
+          if (c.showWhen && c.showWhen !== viewAs) {
+            viewAs = c.showWhen;
+            document.querySelectorAll('#viewAs button').forEach((x) => x.classList.toggle('on', x.dataset.v === viewAs));
+            selectedId = c.id;
+            renderCanvas();
+          }
+          select(c.id);
+        },
+      },
         svgIcon(c.type, 16),
         el('span', { class: 'name', text: def.label }),
         el('span', { class: 'sub', text: describe(c) }),
@@ -456,7 +468,11 @@
     const stage = $('#stage');
     stage.innerHTML = '';
     RT.styleStage(stage, project);
-    stage.appendChild(RT.renderScreen(screen(), project, RT.staticContext(project, screen())));
+    const ctx = RT.staticContext(project, screen());
+    ctx.viewAs = viewAs;
+    stage.appendChild(RT.renderScreen(screen(), project, ctx));
+    const hasConditional = project.screens.some((sc) => sc.components.some((c) => c.showWhen));
+    $('#viewAs').hidden = !hasConditional;
     stage.appendChild(el('div', { id: 'guides' }));
     stage.appendChild(el('div', { id: 'selBox', class: 'sel-box', hidden: true }));
     const bg = screen().bg || RT.themeOf(project).bg;
@@ -753,6 +769,11 @@
     root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '보이는 때' }),
       segmented([['always', '항상'], ['guest', '로그인 전'], ['member', '로그인 후']], comp.showWhen || 'always', (v) => {
         mutate(() => { if (v === 'always') delete comp.showWhen; else comp.showWhen = v; });
+        if (v !== 'always') {
+          viewAs = v;
+          document.querySelectorAll('#viewAs button').forEach((x) => x.classList.toggle('on', x.dataset.v === v));
+        }
+        renderCanvas();
         renderLayers();
       }),
       el('div', { class: 'hint', text: '미리보기와 내보낸 앱에서, 앱 사용자가 로그인했는지에 따라 이 블록을 보이거나 숨겨요' })));
@@ -778,6 +799,52 @@
     root.appendChild(el('div', { class: 'actions' },
       el('button', { class: 'outline', onclick: () => pasteComponent(comp, GRID * 2) }, svgIcon('copy', 16), '블록 복제'),
       el('button', { class: 'outline danger', onclick: deleteSelected }, svgIcon('trash', 16), '블록 삭제')));
+  }
+
+  // 앱 사용자 계정을 어디에 저장할지: 이 기기(localStorage) 또는 Firebase(여러 기기)
+  function authProviderControls() {
+    const conf = project.auth || {};
+    const provider = conf.provider === 'firebase' ? 'firebase' : 'local';
+    const setAuth = (patch, key) => mutate(() => { project.auth = Object.assign({}, project.auth, patch); }, key);
+    const wrap = el('div', { class: 'props-section-inner' });
+    wrap.appendChild(field('계정 저장 위치', segmented([['local', '이 기기만'], ['firebase', 'Firebase · 여러 기기']], provider, (v) => {
+      setAuth({ provider: v });
+      renderProps();
+    }), provider === 'local' ? '가입 정보가 앱을 쓰는 사람의 기기에만 저장돼요. 다른 기기에서는 같은 계정으로 로그인할 수 없어요' : null));
+    if (provider !== 'firebase') return wrap;
+
+    const keyInput = el('input', { type: 'text', value: conf.apiKey || '', placeholder: 'AIzaSy…', spellcheck: 'false', autocomplete: 'off' });
+    const status = el('div', { class: 'fb-status', hidden: true });
+    const missing = el('div', { class: 'fb-status bad', text: '키를 넣기 전까지는 "이 기기만" 방식으로 동작해요', hidden: !!conf.apiKey });
+    keyInput.addEventListener('input', () => {
+      setAuth({ apiKey: keyInput.value.trim() }, 'auth:key');
+      status.hidden = true;
+      missing.hidden = !!keyInput.value.trim();
+    });
+    const check = el('button', {
+      onclick: async () => {
+        check.disabled = true;
+        status.hidden = false;
+        status.className = 'fb-status';
+        status.textContent = '확인하는 중…';
+        const r = await RT.checkFirebase(keyInput.value);
+        status.className = 'fb-status ' + (r.ok ? 'ok' : 'bad');
+        status.textContent = r.message;
+        check.disabled = false;
+      },
+    }, svgIcon('check', 16), '연결 확인');
+    wrap.appendChild(field('Firebase 웹 API 키', el('div', { class: 'image-row' }, keyInput, check), '웹 API 키는 앱에 들어가도 되는 공개용 키예요'));
+    wrap.appendChild(status);
+    wrap.appendChild(missing);
+    wrap.appendChild(el('details', { class: 'note fb-guide' },
+      el('summary', { text: 'Firebase 연결 방법 (5분)' }),
+      el('ol', null,
+        el('li', null, el('a', { href: 'https://console.firebase.google.com/', target: '_blank', rel: 'noopener', text: 'Firebase 콘솔' }), '에서 프로젝트를 만들어요 (무료).'),
+        el('li', { text: '왼쪽 메뉴 빌드 → Authentication → 시작하기를 눌러요.' }),
+        el('li', { text: '로그인 방법 탭에서 "이메일/비밀번호"를 사용 설정해요.' }),
+        el('li', { text: '톱니바퀴 → 프로젝트 설정 → 일반 탭에서 "웹 API 키"를 복사해 위에 붙여넣어요. (웹 앱이 없다면 </> 아이콘으로 웹 앱을 먼저 추가하세요)' }),
+        el('li', { text: '"연결 확인"을 누르고, 미리보기에서 가입해 보세요. 가입한 사람은 Firebase 콘솔의 Users 탭에 보여요.' }))));
+    return wrap;
   }
 
   function renderScreenProps(root) {
@@ -816,7 +883,8 @@
       project.screens.map((sc) => el('option', { value: sc.id, text: sc.name })));
     loginSel.value = RT.findScreen(project, project.loginScreen) ? RT.findScreen(project, project.loginScreen).id : '';
     root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '앱 사용자 로그인' }),
-      field('로그인 화면', loginSel, '"로그인해야 볼 수 있는 화면"에 게스트가 들어가거나, 버튼 동작이 "로그인 화면으로"일 때 이 화면을 보여줘요')));
+      field('로그인 화면', loginSel, '"로그인해야 볼 수 있는 화면"에 게스트가 들어가거나, 버튼 동작이 "로그인 화면으로"일 때 이 화면을 보여줘요'),
+      authProviderControls()));
 
     root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '앱 전체 테마' }),
       field('대표 색', colorControl(t.primary === RT.DEFAULT_THEME.primary ? '' : t.primary, RT.DEFAULT_THEME.primary, setTheme('primary')), '헤더, 버튼, 내 말풍선처럼 색을 "기본"으로 둔 블록에 쓰여요'),
@@ -1274,6 +1342,13 @@
     $('#previewClose').addEventListener('click', closePreview);
     $('#previewRestart').addEventListener('click', () => startPreview(project.startScreen));
     $('#saveBtn').addEventListener('click', saveJson);
+    document.querySelectorAll('#viewAs button').forEach((b) => b.addEventListener('click', () => {
+      viewAs = b.dataset.v;
+      document.querySelectorAll('#viewAs button').forEach((x) => x.classList.toggle('on', x === b));
+      if (selected() && selected().showWhen && selected().showWhen !== (viewAs === 'guest' ? 'guest' : 'member')) selectedId = null;
+      renderCanvas();
+      renderProps();
+    }));
     $('#zoomIn').addEventListener('click', () => setZoom(1));
     $('#zoomOut').addEventListener('click', () => setZoom(-1));
     $('#zoomLabel').addEventListener('click', () => setZoom('fit'));

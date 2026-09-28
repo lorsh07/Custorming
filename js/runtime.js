@@ -469,21 +469,48 @@ function createCustormingRuntime() {
         later.onclick = () => ctx.back();
         box.appendChild(later);
       }
-      box.onsubmit = (e) => {
+      const showError = (msg) => {
+        error.textContent = msg;
+        error.style.display = msg ? 'block' : 'none';
+      };
+      if (!signup && ctx.auth.resetPassword) {
+        const forgot = h('button', { height: '30px', flex: 'none', background: 'none', color: '#64748b', fontSize: '13px', alignSelf: 'center' }, '비밀번호를 잊으셨나요?');
+        forgot.type = 'button';
+        forgot.onclick = async () => {
+          showError('');
+          try {
+            await ctx.auth.resetPassword(email.value);
+            ctx.toast('비밀번호 재설정 메일을 보냈어요. 메일함을 확인해 주세요');
+          } catch (err) {
+            showError(err.message);
+          }
+        };
+        box.insertBefore(forgot, submit.nextSibling);
+      }
+      let busy = false;
+      box.onsubmit = async (e) => {
         e.preventDefault();
+        if (busy) return;
+        busy = true;
+        showError('');
+        const label = submit.textContent;
+        submit.textContent = '잠시만요…';
+        submit.style.opacity = '.7';
         try {
           if (signup) {
             if (pw.value !== pw2.value) throw new Error('비밀번호 확인이 일치하지 않아요');
-            ctx.auth.signUp({ name: name.value, email: email.value, password: pw.value });
+            await ctx.auth.signUp({ name: name.value, email: email.value, password: pw.value });
           } else {
-            ctx.auth.logIn({ email: email.value, password: pw.value });
+            await ctx.auth.logIn({ email: email.value, password: pw.value });
           }
           // 다음에 폼을 다시 볼 때는 로그인 탭부터
           ctx.setState(comp.id + ':mode', 'login');
           ctx.afterLogin(p.target);
         } catch (err) {
-          error.textContent = err.message;
-          error.style.display = 'block';
+          showError(err.message);
+          submit.textContent = label;
+          submit.style.opacity = '';
+          busy = false;
         }
       };
       return box;
@@ -596,6 +623,8 @@ function createCustormingRuntime() {
 
   // 앱마다 따로, 이 기기(브라우저)에 가입 정보를 보관한다
   function createAppAuth(project) {
+    const conf = project.auth || {};
+    if (conf.provider === 'firebase' && String(conf.apiKey || '').trim()) return createFirebaseAuth(project);
     const prefix = 'cm-app:' + (project.id || project.name || 'app');
     const read = (key, fallback) => {
       try { const raw = localStorage.getItem(prefix + key); return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
@@ -650,6 +679,138 @@ function createCustormingRuntime() {
     return { user, signUp, logIn, logOut };
   }
 
+  // Firebase Authentication (REST API) — 같은 계정으로 여러 기기에서 로그인된다.
+  // SDK 없이 fetch만 쓰므로 내보낸 HTML 파일 하나로 동작한다.
+  const FIREBASE_ERRORS = [
+    [/^EMAIL_EXISTS/, '이미 가입된 이메일이에요. 로그인해 주세요'],
+    [/^(EMAIL_NOT_FOUND|INVALID_PASSWORD|INVALID_LOGIN_CREDENTIALS)/, '이메일 또는 비밀번호가 맞지 않아요'],
+    [/^(INVALID_EMAIL|MISSING_EMAIL)/, '올바른 이메일 주소를 입력해 주세요'],
+    [/^(WEAK_PASSWORD|MISSING_PASSWORD)/, '비밀번호가 너무 약해요. 8자 이상으로 정해 주세요'],
+    [/^TOO_MANY_ATTEMPTS_TRY_LATER/, '시도가 너무 많아요. 잠시 후 다시 해 주세요'],
+    [/^USER_DISABLED/, '사용이 중지된 계정이에요'],
+    [/^(OPERATION_NOT_ALLOWED|PASSWORD_LOGIN_DISABLED)/, 'Firebase에서 이메일/비밀번호 로그인이 꺼져 있어요'],
+    [/^CONFIGURATION_NOT_FOUND/, 'Firebase 프로젝트에서 Authentication을 아직 시작하지 않았어요'],
+    [/API key not valid|API_KEY_INVALID|INVALID_API_KEY/, 'Firebase 웹 API 키가 올바르지 않아요'],
+  ];
+
+  function firebaseMessage(code) {
+    const hit = FIREBASE_ERRORS.find(([re]) => re.test(code));
+    return hit ? hit[1] : '로그인 중 문제가 생겼어요 (' + code + ')';
+  }
+
+  function firebaseClient(apiKey) {
+    const key = encodeURIComponent(String(apiKey || '').trim());
+    async function post(url, body, form) {
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': form ? 'application/x-www-form-urlencoded' : 'application/json' },
+          body: form ? body : JSON.stringify(body),
+        });
+      } catch (e) {
+        const err = new Error('인터넷에 연결할 수 없어요. 연결을 확인해 주세요');
+        err.offline = true;
+        throw err;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const code = (data.error && (data.error.message || data.error.status)) || String(res.status);
+        const err = new Error(firebaseMessage(code));
+        err.code = code;
+        throw err;
+      }
+      return data;
+    }
+    return {
+      accounts: (method, body) => post('https://identitytoolkit.googleapis.com/v1/accounts:' + method + '?key=' + key, body),
+      refresh: (token) => post('https://securetoken.googleapis.com/v1/token?key=' + key,
+        'grant_type=refresh_token&refresh_token=' + encodeURIComponent(token), true),
+    };
+  }
+
+  // 에디터의 "연결 확인" 버튼용: 없는 계정으로 로그인해 보고 돌아온 오류로 설정 상태를 판단한다
+  async function checkFirebase(apiKey) {
+    if (!String(apiKey || '').trim()) return { ok: false, message: '웹 API 키를 입력해 주세요' };
+    try {
+      await firebaseClient(apiKey).accounts('signInWithPassword', {
+        email: 'connection-check@custorming.invalid', password: 'connection-check', returnSecureToken: true,
+      });
+      return { ok: true, message: 'Firebase에 연결됐어요' };
+    } catch (err) {
+      if (/^(EMAIL_NOT_FOUND|INVALID_PASSWORD|INVALID_LOGIN_CREDENTIALS|INVALID_EMAIL)/.test(err.code || '')) {
+        return { ok: true, message: 'Firebase에 연결됐어요. 이메일/비밀번호 로그인을 쓸 수 있어요' };
+      }
+      return { ok: false, message: err.message };
+    }
+  }
+
+  function createFirebaseAuth(project) {
+    const api = firebaseClient(project.auth.apiKey);
+    const storeKey = 'cm-app:' + (project.id || project.name || 'app') + ':firebase-session';
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem(storeKey) || 'null'); } catch (e) { session = null; }
+
+    function save(s) {
+      session = s;
+      try {
+        if (s) localStorage.setItem(storeKey, JSON.stringify(s));
+        else localStorage.removeItem(storeKey);
+      } catch (e) { /* 저장 못 해도 이번 실행 동안은 유지 */ }
+    }
+
+    function user() {
+      return session ? { name: session.name, email: session.email } : null;
+    }
+
+    async function signUp(o) {
+      const name = String(o.name || '').trim();
+      if (!name) throw new Error('이름을 입력해 주세요');
+      if (String(o.password || '').length < 8) throw new Error('비밀번호는 8자 이상이어야 해요');
+      const data = await api.accounts('signUp', { email: String(o.email || '').trim(), password: o.password, returnSecureToken: true });
+      // 이름은 Firebase 계정에 저장해서 다른 기기에서도 보이게 한다
+      const updated = await api.accounts('update', { idToken: data.idToken, displayName: name, returnSecureToken: true });
+      save({ uid: data.localId, email: data.email, name, refreshToken: updated.refreshToken || data.refreshToken });
+      return user();
+    }
+
+    async function logIn(o) {
+      const data = await api.accounts('signInWithPassword', { email: String(o.email || '').trim(), password: o.password, returnSecureToken: true });
+      save({ uid: data.localId, email: data.email, name: data.displayName || data.email.split('@')[0], refreshToken: data.refreshToken });
+      return user();
+    }
+
+    function logOut() {
+      save(null);
+    }
+
+    async function resetPassword(email) {
+      email = String(email || '').trim();
+      if (!email) throw new Error('이메일을 먼저 입력해 주세요');
+      await api.accounts('sendOobCode', { requestType: 'PASSWORD_RESET', email });
+    }
+
+    // 앱을 켤 때 로그인이 아직 유효한지 확인하고, 다른 기기에서 바꾼 이름을 반영한다
+    async function verify() {
+      if (!session) return 'none';
+      try {
+        const token = await api.refresh(session.refreshToken);
+        const info = await api.accounts('lookup', { idToken: token.id_token });
+        const u = info.users && info.users[0];
+        const name = (u && u.displayName) || session.name;
+        const changed = name !== session.name;
+        save(Object.assign({}, session, { name, email: (u && u.email) || session.email, refreshToken: token.refresh_token || session.refreshToken }));
+        return changed ? 'updated' : 'ok';
+      } catch (err) {
+        if (err.offline) return 'offline'; // 오프라인이면 기존 로그인 유지
+        save(null);
+        return 'signedOut';
+      }
+    }
+
+    return { user, signUp, logIn, logOut, resetPassword, verify, remote: true };
+  }
+
   // {이름}, {이메일} 을 로그인한 사람 정보로 바꾼다
   function fillProps(props, u) {
     const out = {};
@@ -673,6 +834,8 @@ function createCustormingRuntime() {
       const u = ctx.auth.user();
       if ((comp.showWhen === 'guest' && u) || (comp.showWhen === 'member' && !u)) return null;
       props = fillProps(props, u);
+    } else if (ctx.viewAs && comp.showWhen && comp.showWhen !== ctx.viewAs) {
+      return null;
     }
     const wrap = h('div', {
       left: comp.x + 'px', top: comp.y + 'px', width: comp.w + 'px', height: comp.h + 'px',
@@ -842,6 +1005,18 @@ function createCustormingRuntime() {
     };
 
     go(opts.screenId || project.startScreen || project.screens[0].id, { replace: true });
+    if (auth.verify) {
+      auth.verify().then((result) => {
+        if (!stage.isConnected) return;
+        if (result === 'signedOut') {
+          if (screen().requireLogin) go(startId(), { replace: true });
+          else draw();
+          toast('로그인이 만료됐어요. 다시 로그인해 주세요');
+        } else if (result === 'updated') {
+          draw();
+        }
+      });
+    }
     return { go, back, stage };
   }
 
@@ -869,6 +1044,6 @@ function createCustormingRuntime() {
   return {
     DEFAULT_SIZE, DEFAULT_THEME, FONTS, ICONS, icon,
     injectCSS, styleStage, renderScreen, renderComponent, staticContext, mount, boot,
-    themeOf, sizeOf, findScreen, parseMessages, sha256, loginScreenOf,
+    themeOf, sizeOf, findScreen, parseMessages, sha256, loginScreenOf, checkFirebase,
   };
 }

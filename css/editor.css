@@ -331,3 +331,19 @@ button.big { width: 100%; padding: 18px; font-size: 17px; border-radius: 14px; b
 .later-btn { margin-top: 14px; border: none; background: none; color: var(--muted); font-size: 13.5px; }
 .later-btn:hover { background: none; color: var(--text); text-decoration: underline; }
 .auth-fineprint { margin: 6px 0 0; color: var(--faint); font-size: 12px; }
+
+/* ------------------------------------------------ Firebase 설정 */
+.props-section-inner { display: flex; flex-direction: column; gap: 12px; }
+.fb-status { font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--muted); }
+.fb-status.ok { background: #ecfdf5; color: #047857; }
+.fb-status.bad { background: #fffbeb; color: #b45309; }
+.fb-guide summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
+.fb-guide ol { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.fb-guide a { color: var(--accent); }
+
+.view-as {
+  position: absolute; top: 16px; left: 16px; z-index: 5; display: flex; gap: 2px; padding: 3px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+}
+.view-as button { border: none; background: none; padding: 5px 10px; font-size: 13px; color: var(--muted); border-radius: 7px; }
+.view-as button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
