@@ -27,7 +27,19 @@
     </div>
     <button id="previewBtn" class="ghost"><span data-icon="eye"></span>미리보기</button>
     <button id="saveBtn" class="primary" title="프로젝트를 파일로 저장 (Ctrl+S)"><span data-icon="save"></span>저장</button>
-    <button id="helpBtn" class="help-btn" title="시작 안내 보기">?</button>
+    <div class="menu-wrap" id="accountWrap">
+      <button id="loginBtn" class="login-btn" title="로그인하면 작업이 내 계정에 저장돼요">로그인</button>
+      <button id="avatarBtn" class="avatar-btn" hidden></button>
+      <div id="accountMenu" class="menu account-menu" hidden>
+        <div class="account-card">
+          <span id="accountAvatar" class="avatar-btn static"></span>
+          <div><b id="accountName"></b><small id="accountEmail"></small></div>
+        </div>
+        <div class="account-note">작업이 이 계정에 자동 저장돼요.</div>
+        <hr>
+        <button id="logoutBtn"><span data-icon="logout"></span>로그아웃</button>
+      </div>
+    </div>
     <input id="fileInput" type="file" accept=".json,.html,application/json,text/html" hidden>
   </header>
 
@@ -108,9 +120,33 @@
     </div>
   </div>
 
+  <div id="authModal" class="welcome-backdrop" hidden>
+    <div class="welcome auth" role="dialog" aria-labelledby="authTitle">
+      <button id="authClose" class="welcome-close" title="닫기" data-icon="x"></button>
+      <div class="welcome-icon" data-icon="user"></div>
+      <h2 id="authTitle">로그인</h2>
+      <p id="authSub" class="welcome-sub">로그인하면 작업이 내 계정에 따로 저장돼요.</p>
+      <div class="segmented auth-tabs">
+        <button type="button" data-mode="login" class="on">로그인</button>
+        <button type="button" data-mode="signup">회원가입</button>
+      </div>
+      <form id="authForm" class="auth-form" novalidate>
+        <label class="field" data-only="signup"><span class="field-label">이름</span><input id="authName" type="text" autocomplete="name" placeholder="홍길동"></label>
+        <label class="field"><span class="field-label">이메일</span><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+        <label class="field"><span class="field-label">비밀번호</span><input id="authPassword" type="password" autocomplete="current-password" placeholder="8자 이상"></label>
+        <label class="field" data-only="signup"><span class="field-label">비밀번호 확인</span><input id="authPassword2" type="password" autocomplete="new-password" placeholder="한 번 더 입력"></label>
+        <div id="authError" class="auth-error" role="alert" hidden></div>
+        <button id="authSubmit" type="submit" class="primary big">로그인</button>
+      </form>
+      <button id="authLater" type="button" class="later-btn">나중에 할게요 — 게스트로 계속하기</button>
+      <p class="auth-fineprint">계정은 이 브라우저에만 저장돼요. 다른 기기와는 아직 공유되지 않아요.</p>
+    </div>
+  </div>
+
   <script src="js/runtime.js"></script>
   <script src="js/components.js"></script>
   <script src="js/templates.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/editor.js"></script>
 </body>
 </html>

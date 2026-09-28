@@ -5,6 +5,7 @@
   const RT = createCustormingRuntime();
   const DEFS = window.CM_COMPONENTS;
   const TEMPLATES = window.CM_TEMPLATES;
+  const AUTH = window.CustormingAuth;
   const uid = window.cmUid;
   const STORAGE_KEY = 'custorming.project.v1';
   const GRID = 8;
@@ -61,9 +62,15 @@
   let lastKey = null;
   let lastTime = 0;
 
+  // 게스트 작업과 계정별 작업을 따로 보관한다
+  function storageKey() {
+    const user = AUTH.current();
+    return user ? `${STORAGE_KEY}:${user.email}` : STORAGE_KEY;
+  }
+
   function loadStored() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey());
       const data = raw && JSON.parse(raw);
       return isProject(data) ? data : null;
     } catch (e) {
@@ -80,7 +87,7 @@
 
   function persist() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+      localStorage.setItem(storageKey(), JSON.stringify(project));
       savedAt = Date.now();
     } catch (e) {
       toast('브라우저 저장 공간이 부족해요. "저장" 버튼으로 파일로 보관하세요.');
@@ -301,6 +308,7 @@
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
     folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>',
     template: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
     help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
     alignLeft: '<path d="M3 6h18M3 12h12M3 18h16"/>',
     alignCenter: '<path d="M3 6h18M6 12h12M4 18h16"/>',
@@ -351,7 +359,7 @@
   function hydrateIcons() {
     document.querySelectorAll('[data-icon]').forEach((node) => {
       const name = node.dataset.icon;
-      const sizeByName = { puzzle: 20, rocket: 34, x: 20 };
+      const sizeByName = { puzzle: 20, rocket: 34, user: 34, x: 20 };
       node.prepend(svgIcon(name, sizeByName[name] || 18));
     });
   }
@@ -922,6 +930,10 @@
 
   function setupKeyboard() {
     document.addEventListener('keydown', (e) => {
+      if (!$('#authModal').hidden) {
+        if (e.key === 'Escape') closeAuth();
+        return;
+      }
       if (!$('#welcome').hidden) {
         if (e.key === 'Escape' || e.key === 'Enter') closeWelcome();
         return;
@@ -930,7 +942,11 @@
         if (e.key === 'Escape') closePreview();
         return;
       }
-      if (e.key === 'Escape' && !$('#moreMenu').hidden) { $('#moreMenu').hidden = true; return; }
+      if (e.key === 'Escape' && !($('#moreMenu').hidden && $('#accountMenu').hidden)) {
+        $('#moreMenu').hidden = true;
+        $('#accountMenu').hidden = true;
+        return;
+      }
       const typing = e.target.closest('input, textarea, select, [contenteditable]');
       const mod = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
@@ -1099,10 +1115,106 @@
     $('#welcomeGo').addEventListener('click', closeWelcome);
     $('#welcomeClose').addEventListener('click', closeWelcome);
     $('#welcome').addEventListener('pointerdown', (e) => { if (e.target === $('#welcome')) closeWelcome(); });
-    $('#helpBtn').addEventListener('click', openWelcome);
     let seen = false;
     try { seen = !!localStorage.getItem(WELCOME_KEY); } catch (e) { seen = false; }
     if (!seen) openWelcome();
+  }
+
+  // ---------------------------------------------------------------- 계정 (선택 사항)
+
+  let authMode = 'login';
+
+  function openAuth(mode) {
+    setAuthMode(mode || 'login');
+    $('#authForm').reset();
+    $('#authError').hidden = true;
+    $('#authModal').hidden = false;
+    (authMode === 'signup' ? $('#authName') : $('#authEmail')).focus();
+  }
+
+  function closeAuth() {
+    $('#authModal').hidden = true;
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    const signup = mode === 'signup';
+    document.querySelectorAll('.auth-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+    document.querySelectorAll('#authForm [data-only="signup"]').forEach((n) => { n.hidden = !signup; });
+    $('#authTitle').textContent = signup ? '회원가입' : '로그인';
+    $('#authSub').textContent = signup ? '가입하면 지금 만들던 앱이 새 계정에 그대로 저장돼요.' : '로그인하면 작업이 내 계정에 따로 저장돼요.';
+    $('#authSubmit').textContent = signup ? '가입하고 계속하기' : '로그인';
+    $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
+    $('#authError').hidden = true;
+  }
+
+  async function submitAuth(e) {
+    e.preventDefault();
+    const error = $('#authError');
+    const button = $('#authSubmit');
+    error.hidden = true;
+    const email = $('#authEmail').value;
+    const password = $('#authPassword').value;
+    try {
+      if (authMode === 'signup' && password !== $('#authPassword2').value) throw new Error('비밀번호 확인이 일치하지 않아요');
+      button.disabled = true;
+      if (authMode === 'signup') {
+        // 가입 직후에도 지금 작업을 그대로 이어서 새 계정에 저장한다
+        const user = await AUTH.signUp({ name: $('#authName').value, email, password });
+        persist();
+        toast(`환영해요, ${user.name}님! 지금 작업이 계정에 저장됐어요`);
+      } else {
+        const user = await AUTH.logIn({ email, password });
+        const saved = loadStored();
+        if (saved) {
+          loadProject(saved);
+          toast(`${user.name}님, 다시 오셨네요! 계정에 저장된 작업을 열었어요`);
+        } else {
+          persist();
+          toast(`${user.name}님, 로그인했어요. 지금 작업이 계정에 저장됐어요`);
+        }
+      }
+      closeAuth();
+    } catch (err) {
+      error.textContent = err.message;
+      error.hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function logOut() {
+    $('#accountMenu').hidden = true;
+    AUTH.logOut();
+    loadProject(loadStored() || TEMPLATES.tasks.build());
+    toast('로그아웃했어요. 게스트로 계속 쓸 수 있어요');
+  }
+
+  function renderAccount() {
+    const user = AUTH.current();
+    $('#loginBtn').hidden = !!user;
+    $('#avatarBtn').hidden = !user;
+    if (!user) { $('#accountMenu').hidden = true; return; }
+    const initial = Array.from(user.name)[0] || '?';
+    $('#avatarBtn').textContent = initial;
+    $('#avatarBtn').title = `${user.name} (${user.email})`;
+    $('#accountAvatar').textContent = initial;
+    $('#accountName').textContent = user.name;
+    $('#accountEmail').textContent = user.email;
+  }
+
+  function setupAccount() {
+    $('#loginBtn').addEventListener('click', () => openAuth('login'));
+    $('#avatarBtn').addEventListener('click', () => { $('#accountMenu').hidden = !$('#accountMenu').hidden; });
+    $('#logoutBtn').addEventListener('click', logOut);
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#accountWrap')) $('#accountMenu').hidden = true; });
+    document.querySelectorAll('.auth-tabs button').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.mode)));
+    $('#authForm').addEventListener('submit', submitAuth);
+    $('#authClose').addEventListener('click', closeAuth);
+    $('#authLater').addEventListener('click', closeAuth);
+    $('#authModal').addEventListener('pointerdown', (e) => { if (e.target === $('#authModal')) closeAuth(); });
+    AUTH.onChange(renderAccount);
+    renderAccount();
   }
 
   function setupTopbar() {
@@ -1153,6 +1265,7 @@
   setupCanvas();
   setupKeyboard();
   setupWelcome();
+  setupAccount();
   renderAll();
   updateSaveStatus();
   setInterval(updateSaveStatus, 30000);
@@ -1160,6 +1273,7 @@
   // 테스트와 콘솔에서 쓰기 위한 창구
   window.custorming = {
     get project() { return project; },
+    openAuth,
     buildAppHtml,
     loadProject,
   };
