@@ -10,8 +10,10 @@ function createCustormingRuntime() {
   'use strict';
 
   const DEFAULT_SIZE = { w: 360, h: 740 };
-  const DEFAULT_THEME = { primary: '#5b5bf7', bg: '#ffffff', text: '#1d1d1f', font: 'system' };
+  const DEFAULT_THEME = { primary: '#3b82f6', bg: '#ffffff', text: '#0f172a', font: 'pretendard' };
+  const PRETENDARD_CSS = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css';
   const FONTS = {
+    pretendard: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
     system: '-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif',
     serif: '"Nanum Myeongjo", "AppleMyungjo", Georgia, serif',
     mono: '"D2Coding", "SFMono-Regular", Menlo, Consolas, monospace',
@@ -38,6 +40,51 @@ function createCustormingRuntime() {
 .cm-switch.on::after{transform:translateX(18px)}
 .cm-toast{position:absolute;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(20,20,24,.92);color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;max-width:80%;text-align:center;z-index:99999;animation:cm-pop .2s ease-out;white-space:pre-wrap}
 `;
+
+  // 24×24 선 아이콘. 탭 바에서 "home = 홈" 처럼 이름으로 쓴다
+  const ICONS = {
+    home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+    list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>',
+    bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    heart: '<path d="M19.5 12.6 12 20l-7.5-7.4a5 5 0 1 1 7.5-6.6 5 5 0 1 1 7.5 6.6z"/>',
+    star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    back: '<path d="m15 18-6-6 6-6"/>',
+    more: '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    cart: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2 2h3l2.7 12.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.6L21 7H6"/>',
+  };
+
+  function icon(name, size, strokeWidth) {
+    const span = document.createElement('span');
+    span.style.display = 'inline-flex';
+    span.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size +
+      '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (strokeWidth || 2) +
+      '" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>';
+    return span;
+  }
+
+  // 아이콘 이름이면 SVG, 아니면 이모지/글자 그대로
+  function iconOrText(value, size) {
+    if (ICONS[value]) return icon(value, size);
+    return h('span', { fontSize: size + 'px', lineHeight: '1' }, value);
+  }
+
+  function injectFont(theme) {
+    if (theme.font !== 'pretendard' || document.getElementById('cm-pretendard')) return;
+    const link = document.createElement('link');
+    link.id = 'cm-pretendard';
+    link.rel = 'stylesheet';
+    link.href = PRETENDARD_CSS;
+    document.head.appendChild(link);
+  }
 
   function injectCSS() {
     if (document.getElementById('cm-runtime-css')) return;
@@ -98,7 +145,8 @@ function createCustormingRuntime() {
     return lines(str).map((line) => {
       const [label, target] = line.split('=').map((s) => s.trim());
       const m = label.match(/^(\S+)\s+(.+)$/);
-      if (m && !/[\p{L}\p{N}]/u.test(m[1])) return { icon: m[1], label: m[2], target: target || m[2] };
+      if (m && (ICONS[m[1]] || !/[\p{L}\p{N}]/u.test(m[1]))) return { icon: m[1], label: m[2], target: target || m[2] };
+      if (ICONS[label]) return { icon: label, label: '', target: target || label };
       return { icon: '', label, target: target || label };
     });
   }
@@ -139,14 +187,14 @@ function createCustormingRuntime() {
         fontSize: px(p.size, 18), fontWeight: '700',
       }, null, 'cm-fill');
       if (p.showBack) {
-        const b = h('button', { background: 'none', color: 'inherit', fontSize: '28px', lineHeight: '1', padding: '0 6px 4px 0' }, '‹');
+        const b = h('button', { background: 'none', color: 'inherit', display: 'flex', padding: '0 4px 0 0', marginLeft: '-6px' }, icon('back', 26));
         b.onclick = () => ctx.back();
         bar.appendChild(b);
       }
       bar.appendChild(h('div', {
         flex: '1', textAlign: p.align || 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }, p.title || ''));
-      if (p.right) bar.appendChild(h('div', { fontSize: '20px', opacity: '.9' }, p.right));
+      if (p.right) bar.appendChild(h('div', { display: 'flex', opacity: '.9' }, iconOrText(p.right, 22)));
       return bar;
     },
 
@@ -213,8 +261,8 @@ function createCustormingRuntime() {
       if (!p.src) {
         return h('div', Object.assign(style, {
           background: 'linear-gradient(135deg,#dfe3ff,#f4e3ff)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', fontSize: '32px', color: '#7a7aa8',
-        }), '🖼', 'cm-fill');
+          alignItems: 'center', justifyContent: 'center', color: '#7a7aa8',
+        }), icon('image', 36, 1.6), 'cm-fill');
       }
       const img = h('img', Object.assign(style, { objectFit: p.fit || 'cover' }), null, 'cm-fill');
       img.src = p.src;
@@ -274,23 +322,81 @@ function createCustormingRuntime() {
     },
 
     tabbar(p, ctx) {
+      const pill = p.style === 'pill';
       const bar = h('div', {
-        display: 'flex', background: p.bg || '#ffffff', borderTop: '1px solid rgba(0,0,0,.08)',
+        display: 'flex', background: p.bg || '#ffffff', borderTop: '1px solid rgba(0,0,0,.06)',
+        padding: pill ? '8px 10px' : '0', gap: pill ? '6px' : '0',
       }, null, 'cm-fill');
       parseTabs(p.items).forEach((tab) => {
         const target = findScreen(ctx.project, tab.target);
         const active = target && target.id === ctx.screen.id;
-        const color = active ? (p.activeColor || ctx.theme.primary) : (p.color || '#9a9aa0');
+        const accent = p.activeColor || ctx.theme.primary;
+        const color = active ? accent : (p.color || '#94a3b8');
         const btn = h('button', {
-          flex: '1', background: 'none', color, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: '2px', fontSize: '11px', fontWeight: active ? '700' : '500',
+          flex: '1', color, display: 'flex', flexDirection: 'column', borderRadius: '14px',
+          background: pill && active ? 'color-mix(in srgb, ' + accent + ' 12%, transparent)' : 'none',
+          alignItems: 'center', justifyContent: 'center', gap: '3px', fontSize: '11px', fontWeight: active ? '700' : '500',
         });
-        if (tab.icon) btn.appendChild(h('span', { fontSize: '22px', lineHeight: '1', filter: active ? 'none' : 'grayscale(1)', opacity: active ? '1' : '.7' }, tab.icon));
-        btn.appendChild(h('span', null, tab.label));
+        if (tab.icon) {
+          const ic = iconOrText(tab.icon, 22);
+          if (!ICONS[tab.icon] && !active) Object.assign(ic.style, { filter: 'grayscale(1)', opacity: '.7' });
+          btn.appendChild(ic);
+        }
+        if (tab.label && p.showLabels !== false) btn.appendChild(h('span', null, tab.label));
         btn.onclick = () => ctx.go(tab.target, { replace: true });
         bar.appendChild(btn);
       });
       return bar;
+    },
+
+    checklist(p, ctx, comp) {
+      const accent = p.color || ctx.theme.primary;
+      const items = ctx.getState(comp.id, null) || lines(p.items).map((line) => {
+        const m = line.match(/^(\[x\]|x)\s+(.*)$/i);
+        return { done: !!m, text: m ? m[2] : line };
+      });
+      const card = h('div', {
+        background: p.bg || '#ffffff', borderRadius: px(p.radius, 16), padding: '14px 16px',
+        border: '1px solid rgba(15,23,42,.08)', boxShadow: '0 1px 2px rgba(15,23,42,.04)', overflow: 'hidden',
+      }, null, 'cm-fill');
+      if (p.title) card.appendChild(h('div', { fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }, p.title));
+      items.forEach((item) => {
+        const row = h('div', { display: 'flex', alignItems: 'center', gap: '12px', padding: '7px 0', cursor: 'pointer' });
+        const box = h('div', {
+          width: '22px', height: '22px', borderRadius: '50%', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: item.done ? 'none' : '1.5px solid #cbd5e1', background: item.done ? accent : 'transparent', color: '#fff',
+        }, item.done ? icon('check', 14, 3) : null);
+        const label = h('div', {
+          fontSize: '15px', color: item.done ? '#94a3b8' : ctx.theme.text, textDecoration: item.done ? 'line-through' : 'none',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }, item.text);
+        row.append(box, label);
+        row.onclick = () => {
+          item.done = !item.done;
+          ctx.setState(comp.id, items);
+          card.replaceWith(renderers.checklist(p, ctx, comp));
+        };
+        card.appendChild(row);
+      });
+      return card;
+    },
+
+    stat(p, ctx) {
+      const card = h('div', {
+        background: p.bg || 'linear-gradient(135deg, #8b5cf6, #7c3aed)', color: p.color || '#fff',
+        borderRadius: px(p.radius, 16), padding: '16px 18px', position: 'relative', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px',
+        boxShadow: '0 8px 20px rgba(124,58,237,.18)',
+      }, null, 'cm-fill');
+      card.appendChild(h('div', { fontSize: '13px', opacity: '.85' }, p.label || ''));
+      card.appendChild(h('div', { fontSize: px(p.size, 28), fontWeight: '800', lineHeight: '1.1' }, p.value || ''));
+      if (p.badge) {
+        card.appendChild(h('div', {
+          position: 'absolute', right: '16px', bottom: '16px', fontSize: '12px', fontWeight: '600',
+          background: 'rgba(255,255,255,.22)', padding: '3px 9px', borderRadius: '999px',
+        }, p.badge));
+      }
+      return card;
     },
 
     divider(p) {
@@ -368,6 +474,7 @@ function createCustormingRuntime() {
   function styleStage(stage, project) {
     const size = sizeOf(project);
     const theme = themeOf(project);
+    injectFont(theme);
     stage.classList.add('cm-stage');
     Object.assign(stage.style, {
       width: size.w + 'px', height: size.h + 'px',
@@ -501,7 +608,7 @@ function createCustormingRuntime() {
   }
 
   return {
-    DEFAULT_SIZE, DEFAULT_THEME, FONTS,
+    DEFAULT_SIZE, DEFAULT_THEME, FONTS, ICONS, icon,
     injectCSS, styleStage, renderScreen, renderComponent, staticContext, mount, boot,
     themeOf, sizeOf, findScreen, parseMessages,
   };

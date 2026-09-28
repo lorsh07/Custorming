@@ -50,7 +50,7 @@
 
   // ---------------------------------------------------------------- 상태
 
-  let project = loadStored() || TEMPLATES.chat.build();
+  let project = loadStored() || TEMPLATES.tasks.build();
   let screenId = project.startScreen || project.screens[0].id;
   let selectedId = null;
   let clipboard = null;
@@ -76,12 +76,24 @@
       data.screens.every((s) => s && s.id && Array.isArray(s.components)));
   }
 
+  let savedAt = null;
+
   function persist() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+      savedAt = Date.now();
     } catch (e) {
       toast('브라우저 저장 공간이 부족해요. "저장" 버튼으로 파일로 보관하세요.');
     }
+    updateSaveStatus();
+  }
+
+  function updateSaveStatus() {
+    const pill = $('#saveStatus');
+    if (!pill) return;
+    if (!savedAt) { pill.textContent = '초안'; return; }
+    const min = Math.floor((Date.now() - savedAt) / 60000);
+    pill.textContent = '자동 저장됨 · ' + (min < 1 ? '방금 전' : min < 60 ? `${min}분 전` : `${Math.floor(min / 60)}시간 전`);
   }
 
   const size = () => RT.sizeOf(project);
@@ -270,6 +282,80 @@
     return name;
   }
 
+  // ---------------------------------------------------------------- 아이콘
+
+  const UI_ICONS = {
+    puzzle: '<path d="M19.4 14.6a1.55 1.55 0 0 0 2.2-2.2L20 10.8V7a1 1 0 0 0-1-1h-3.8l-1.6-1.6a1.55 1.55 0 0 0-2.2 2.2l.6.4H8a1 1 0 0 0-1 1v3.4l.6-.6a1.55 1.55 0 1 1 2.2 2.2L7 14.8V19a1 1 0 0 0 1 1h4.2l-.6-.6a1.55 1.55 0 0 1 2.2-2.2l2.8 2.8H19a1 1 0 0 0 1-1v-3.8z"/>',
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+    eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+    more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+    minus: '<path d="M5 12h14"/>',
+    magnet: '<path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15"/><path d="m5 8 4 4M12 15l4 4"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    rocket: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>',
+    screen: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+    folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>',
+    template: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+    help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
+    alignLeft: '<path d="M3 6h18M3 12h12M3 18h16"/>',
+    alignCenter: '<path d="M3 6h18M6 12h12M4 18h16"/>',
+    alignRight: '<path d="M3 6h18M9 12h12M5 18h16"/>',
+    front: '<path d="m17 11-5-5-5 5M17 18l-5-5-5 5"/>',
+    up: '<path d="m18 15-6-6-6 6"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
+    back: '<path d="m7 13 5 5 5-5M7 6l5 5 5-5"/>',
+    widthFull: '<path d="M3 12h18M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
+    centerH: '<path d="M12 3v18"/><rect x="6" y="8" width="12" height="8" rx="2"/>',
+    star: RT.ICONS.star,
+    plus: RT.ICONS.plus,
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+  };
+
+  // 오브젝트 종류별 아이콘
+  const TYPE_ICONS = {
+    button: '<rect x="3" y="7" width="18" height="10" rx="5"/><path d="M9 12h6"/>',
+    image: RT.ICONS.image,
+    text: '<path d="M4 7V5h16v2M9 19h6M12 5v14"/>',
+    card: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h6"/>',
+    list: '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
+    header: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/>',
+    chat: RT.ICONS.chat,
+    chatInput: '<rect x="2" y="7" width="15" height="10" rx="5"/><path d="m22 12-3-2.5v5z"/>',
+    checklist: RT.ICONS.list,
+    stat: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
+    avatar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.2 18.4a7 7 0 0 1 11.6 0"/>',
+    input: '<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 10v4"/>',
+    toggle: '<rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="16" cy="12" r="3"/>',
+    box: '<rect x="4" y="4" width="16" height="16" rx="3"/>',
+    tabbar: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 15h18M9 15v6M15 15v6"/>',
+    divider: '<path d="M3 12h18"/>',
+  };
+
+  function svgIcon(name, size, strokeWidth) {
+    const span = document.createElement('span');
+    span.style.display = 'inline-flex';
+    if (name === 'status') {
+      span.innerHTML = '<svg width="48" height="12" viewBox="0 0 48 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2" width="3" height="10" rx="1"/><path d="M22.5 11.5 18 7a6.4 6.4 0 0 1 9 0z"/><rect x="31" y="1.5" width="15" height="9" rx="2.5" fill="none" stroke="currentColor"/><rect x="33" y="3.5" width="10" height="5" rx="1"/></svg>';
+      return span;
+    }
+    const paths = UI_ICONS[name] || TYPE_ICONS[name] || RT.ICONS[name] || '';
+    span.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${size || 18}" height="${size || 18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth || 2}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+    return span;
+  }
+
+  function hydrateIcons() {
+    document.querySelectorAll('[data-icon]').forEach((node) => {
+      const name = node.dataset.icon;
+      const sizeByName = { puzzle: 20, rocket: 34, x: 20 };
+      node.prepend(svgIcon(name, sizeByName[name] || 18));
+    });
+  }
+
   // ---------------------------------------------------------------- 렌더링
 
   function renderAll() {
@@ -288,16 +374,19 @@
     Object.entries(DEFS).forEach(([type, def]) => {
       if (def.group !== group) {
         group = def.group;
-        box.appendChild(el('div', { class: 'palette-group', text: group }));
+        box.appendChild(el('div', { class: 'group-label', text: group }));
       }
+      const wide = def.group === '레이아웃';
       box.appendChild(el('button', {
-        class: 'palette-item', draggable: 'true', title: `${def.label} — 클릭하면 화면에 추가`,
+        class: wide ? 'wide' : 'tile', draggable: 'true', title: `${def.label} — 끌어다 놓거나 클릭해서 추가`,
         ondragstart: (e) => {
           e.dataTransfer.setData('text/cm-type', type);
           e.dataTransfer.effectAllowed = 'copy';
         },
         onclick: () => addComponent(type),
-      }, el('span', { class: 'ico', text: def.icon }), def.label));
+      },
+      svgIcon(type, wide ? 24 : 28, 1.6),
+      wide ? el('span', null, el('b', { text: def.label }), el('small', { text: def.desc || '' })) : el('span', { text: def.label })));
     });
   }
 
@@ -320,9 +409,9 @@
           if (name) { renameScreen(s, name); renderAll(); }
         },
       },
-      el('span', { class: 'ico', text: '▯' }),
+      svgIcon('screen', 16),
       el('span', { class: 'name', text: s.name }),
-      isStart ? el('span', { class: 'tag', text: '★ 시작' }) : null));
+      isStart ? el('span', { class: 'tag', text: '시작' }) : null));
     });
   }
 
@@ -336,11 +425,11 @@
     const list = $('#layerList');
     list.innerHTML = '';
     const comps = screen().components.slice().reverse();
-    if (!comps.length) list.appendChild(el('li', { class: 'empty', text: '비어 있어요. 왼쪽 위 오브젝트를 추가하세요.' }));
+    if (!comps.length) list.appendChild(el('li', { class: 'empty', text: '아직 비어 있어요. 위에서 오브젝트를 추가하세요.' }));
     comps.forEach((c) => {
-      const def = DEFS[c.type] || { icon: '?', label: c.type };
+      const def = DEFS[c.type] || { label: c.type };
       list.appendChild(el('li', { class: c.id === selectedId ? 'active' : '', onclick: () => select(c.id) },
-        el('span', { class: 'ico', text: def.icon }),
+        svgIcon(c.type, 16),
         el('span', { class: 'name', text: def.label }),
         el('span', { class: 'sub', text: describe(c) })));
     });
@@ -348,23 +437,46 @@
 
   function renderCanvas() {
     const stage = $('#stage');
-    const { w: W, h: H } = size();
     stage.innerHTML = '';
     RT.styleStage(stage, project);
     stage.appendChild(RT.renderScreen(screen(), project, RT.staticContext(project, screen())));
     stage.appendChild(el('div', { id: 'guides' }));
     stage.appendChild(el('div', { id: 'selBox', class: 'sel-box', hidden: true }));
-    $('#phoneScreen').style.background = screen().bg || RT.themeOf(project).bg;
-    fitCanvas(W, H);
+    const bg = screen().bg || RT.themeOf(project).bg;
+    $('#phoneScreen').style.background = bg;
+    $('#phone').style.background = bg;
+    $('#dropZone').classList.toggle('empty', !screen().components.length);
+    fitCanvas();
     renderSelection();
   }
 
-  function fitCanvas(W, H) {
+  const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5, 2];
+  let zoomMode = 'fit';
+
+  function fitZoom() {
+    const { w: W, h: H } = size();
     const area = $('#canvasArea');
-    const avail = { w: area.clientWidth - 60, h: area.clientHeight - 70 };
-    zoom = Math.max(0.2, Math.min(1, avail.w / (W + 20), avail.h / (H + 20)));
+    // 휴대폰 테두리(16) + 상태 표시줄(34) + 위아래 여백(72)
+    return Math.max(0.2, Math.min(1, (area.clientWidth - 80) / (W + 16), (area.clientHeight - 122) / H));
+  }
+
+  function fitCanvas() {
+    const { w: W, h: H } = size();
+    zoom = zoomMode === 'fit' ? fitZoom() : zoomMode;
     $('#stage').style.transform = `scale(${zoom})`;
     Object.assign($('#phoneScreen').style, { width: W * zoom + 'px', height: H * zoom + 'px' });
+    $('#zoomLabel').textContent = Math.round(zoom * 100) + '%';
+  }
+
+  function setZoom(dir) {
+    if (dir === 'fit') zoomMode = 'fit';
+    else {
+      const next = dir > 0 ? ZOOM_STEPS.find((z) => z > zoom + 0.001) : ZOOM_STEPS.slice().reverse().find((z) => z < zoom - 0.001);
+      if (!next) return;
+      zoomMode = next;
+    }
+    fitCanvas();
+    renderSelection();
   }
 
   function renderSelection() {
@@ -403,20 +515,40 @@
 
   // ---------------------------------------------------------------- 속성 패널
 
-  function field(label, control, hint) {
-    return el('label', { class: 'field' }, el('span', { text: label }), control, hint ? el('div', { class: 'hint', text: hint }) : null);
+  const SWATCHES = ['#ffffff', '#f1f5f9', '#0f172a', '#3b82f6', '#8b5cf6', '#10b981', '#f97316'];
+
+  // label 오른쪽에 회색 값(em)을 붙일 수 있는 입력 칸 묶음
+  function field(label, control, hint, value) {
+    return el('div', { class: 'field' },
+      el('div', { class: 'field-label' }, label, value != null ? el('em', { text: value }) : null),
+      control,
+      hint ? el('div', { class: 'hint', text: hint }) : null);
   }
 
   function colorControl(value, fallback, onChange) {
+    const wrap = el('div', { class: 'swatches' });
+    const current = () => (value || '').toLowerCase();
+    const paint = () => {
+      wrap.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('on', s.dataset.v === current()));
+      const custom = wrap.querySelector('.custom');
+      const isCustom = !!value && !SWATCHES.includes(current());
+      custom.classList.toggle('on', isCustom);
+      custom.style.setProperty('--c', value || 'transparent');
+      custom.title = isCustom ? `직접 고른 색 ${value}` : '직접 고르기';
+    };
+    const choose = (v) => { value = v; paint(); onChange(v); };
+    wrap.appendChild(el('button', {
+      class: 'swatch default', 'data-v': '', title: fallback ? `기본값 (${fallback})` : '없음',
+      text: '기본', onclick: () => choose(''),
+    }));
+    SWATCHES.forEach((c) => wrap.appendChild(el('button', {
+      class: 'swatch', 'data-v': c, title: c, style: { background: c }, onclick: () => choose(c),
+    })));
     const picker = el('input', { type: 'color', value: toHex(value || fallback) });
-    const text = el('input', { type: 'text', value: value || '', placeholder: fallback ? `테마 색 (${fallback})` : '없음' });
-    picker.addEventListener('input', () => { text.value = picker.value; onChange(picker.value); });
-    text.addEventListener('input', () => { picker.value = toHex(text.value || fallback); onChange(text.value.trim()); });
-    const reset = el('button', {
-      title: '기본값(테마 색)으로', text: '↺',
-      onclick: (e) => { e.preventDefault(); text.value = ''; picker.value = toHex(fallback); onChange(''); },
-    });
-    return el('div', { class: 'color-row' }, picker, text, reset);
+    picker.addEventListener('input', () => choose(picker.value));
+    wrap.appendChild(el('label', { class: 'swatch custom' }, picker));
+    paint();
+    return wrap;
   }
 
   function toHex(color) {
@@ -425,6 +557,39 @@
     probe.fillStyle = color || '#000000';
     const v = probe.fillStyle;
     return /^#[0-9a-f]{6}$/i.test(v) ? v : '#000000';
+  }
+
+  function slider(value, min, max, onInput, label) {
+    const range = el('input', { type: 'range', min, max, step: 1, value });
+    const paint = () => {
+      range.style.setProperty('--fill', ((range.value - min) / (max - min)) * 100 + '%');
+      if (label) label.textContent = range.value + 'px';
+    };
+    range.addEventListener('input', () => { paint(); onInput(Number(range.value)); });
+    paint();
+    return range;
+  }
+
+  function segmented(options, value, onPick) {
+    const wrap = el('div', { class: 'segmented' });
+    options.forEach(([v, label, iconName]) => {
+      wrap.appendChild(el('button', {
+        class: v === value ? 'on' : '', title: label,
+        onclick: () => {
+          wrap.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+          wrap.querySelector(`[data-v="${v}"]`).classList.add('on');
+          onPick(v);
+        },
+        'data-v': v,
+      }, iconName ? svgIcon(iconName, 18) : label));
+    });
+    return wrap;
+  }
+
+  function switchField(label, checked, onChange, disabled) {
+    const box = el('input', { type: 'checkbox', checked: !!checked, disabled: !!disabled });
+    box.addEventListener('change', () => onChange(box.checked));
+    return el('label', { class: 'switch-field' }, el('span', { text: label }), box, el('span', { class: 'switch' }));
   }
 
   function imageControl(value, onChange) {
@@ -442,8 +607,8 @@
       }
     });
     return el('div', { class: 'image-row' }, text,
-      el('button', { text: '업로드', onclick: (e) => { e.preventDefault(); file.click(); } }),
-      el('button', { text: '✕', title: '이미지 지우기', onclick: (e) => { e.preventDefault(); text.value = ''; text.placeholder = 'https://… 이미지 주소'; onChange(''); } }),
+      el('button', { title: '사진 올리기', onclick: () => file.click() }, svgIcon('upload', 16)),
+      el('button', { title: '이미지 지우기', onclick: () => { text.value = ''; text.placeholder = 'https://… 이미지 주소'; onChange(''); } }, svgIcon('x', 16)),
       file);
   }
 
@@ -469,7 +634,7 @@
     });
   }
 
-  function propControl(f, comp) {
+  function fieldFor(f, comp) {
     const p = comp.props;
     const theme = RT.themeOf(project);
     const key = comp.id + ':' + f.key;
@@ -485,52 +650,58 @@
         const t = el('textarea', { rows: f.rows || 3 });
         t.value = p[f.key] || '';
         t.addEventListener('input', () => set(t.value));
-        return t;
+        return field(f.label, t, f.hint);
       }
       case 'number': {
-        const n = el('input', { type: 'number', value: p[f.key], min: f.min, max: f.max });
-        n.addEventListener('input', () => { if (n.value !== '') set(Number(n.value)); });
-        return n;
+        const em = el('em');
+        return el('div', { class: 'field' },
+          el('div', { class: 'field-label' }, f.label, em),
+          slider(Number(p[f.key]) || 0, f.min, f.max, (v) => set(v), em));
       }
       case 'checkbox':
-        return null; // checkbox는 fieldFor에서 따로 그린다
+        return switchField(f.label, p[f.key], (v) => set(v));
       case 'select': {
+        if (f.key === 'align') {
+          const icons = { left: 'alignLeft', center: 'alignCenter', right: 'alignRight' };
+          return field(f.label, segmented(f.options.map(([v, l]) => [v, l, icons[v]]), p[f.key], (v) => set(v)));
+        }
+        if (f.options.length <= 3) return field(f.label, segmented(f.options, p[f.key], (v) => set(v)));
         const s = el('select', { onchange: () => set(s.value, true) },
           f.options.map(([v, label]) => el('option', { value: v, text: label })));
         s.value = p[f.key];
-        return s;
+        return field(f.label, s, f.hint);
       }
       case 'screen': {
         const s = el('select', { onchange: () => set(s.value, true) },
           el('option', { value: '', text: '(없음)' }),
           project.screens.map((sc) => el('option', { value: sc.id, text: sc.name })));
-        s.value = RT.findScreen(project, p[f.key]) ? RT.findScreen(project, p[f.key]).id : '';
-        return s;
+        const target = RT.findScreen(project, p[f.key]);
+        s.value = target ? target.id : '';
+        return field(f.label, s, f.hint);
       }
       case 'color': {
         const fallback = { primary: theme.primary, text: theme.text }[f.fallback] || f.fallback;
-        return colorControl(p[f.key], fallback, (v) => set(v));
+        const em = el('em', { text: p[f.key] || '기본' });
+        return el('div', { class: 'field' },
+          el('div', { class: 'field-label' }, f.label, em),
+          colorControl(p[f.key], fallback, (v) => { em.textContent = v || '기본'; set(v); }));
       }
       case 'image':
-        return imageControl(p[f.key], (v) => set(v));
+        return field(f.label, imageControl(p[f.key], (v) => set(v)), f.hint);
       default: {
         const i = el('input', { type: 'text', value: p[f.key] == null ? '' : p[f.key] });
         i.addEventListener('input', () => set(i.value));
-        return i;
+        return field(f.label, i, f.hint);
       }
     }
   }
 
-  function fieldFor(f, comp) {
-    if (f.type === 'checkbox') {
-      const box = el('input', { type: 'checkbox', checked: !!comp.props[f.key] });
-      box.addEventListener('change', () => {
-        mutate(() => { comp.props[f.key] = box.checked; });
-        renderCanvas();
-      });
-      return el('label', { class: 'checkbox-field' }, box, f.label);
-    }
-    return field(f.label, propControl(f, comp), f.hint);
+  // 속성 칸을 성격별 묶음으로 나눈다
+  function sectionOf(f, def) {
+    if (['action', 'target', 'url'].includes(f.key) || (f.key === 'message' && def === DEFS.button)) return '동작';
+    if (['size', 'fontSize', 'bold', 'align'].includes(f.key)) return '글자';
+    if (f.type === 'color' || ['radius', 'shadow', 'borderWidth', 'variant', 'style', 'thickness', 'fit'].includes(f.key)) return '모양';
+    return '내용';
   }
 
   function renderProps() {
@@ -543,7 +714,7 @@
 
   function renderComponentProps(root, comp) {
     const def = DEFS[comp.type];
-    root.appendChild(el('div', { class: 'props-title' }, el('span', { class: 'ico', text: def.icon }), def.label));
+    root.appendChild(el('div', { class: 'props-head' }, el('h2', { text: '속성' }), el('span', { text: `${def.label} 블록` })));
 
     const geo = el('div', { class: 'geo' });
     [['x', 'X'], ['y', 'Y'], ['w', '너비'], ['h', '높이']].forEach(([k, label]) => {
@@ -559,66 +730,67 @@
     const W = size().w;
     root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '위치와 크기' }), geo,
       el('div', { class: 'btn-row' },
-        el('button', { text: '가로 꽉 채우기', onclick: () => { mutate(() => { comp.x = 0; comp.w = W; }); renderAll(); } }),
-        el('button', { text: '가운데 정렬', onclick: () => { mutate(() => { comp.x = Math.round((W - comp.w) / 2); }); renderAll(); } }))));
+        el('button', { onclick: () => { mutate(() => { comp.x = 0; comp.w = W; }); renderAll(); } }, svgIcon('widthFull', 16), '가로 꽉 채우기'),
+        el('button', { onclick: () => { mutate(() => { comp.x = Math.round((W - comp.w) / 2); }); renderAll(); } }, svgIcon('centerH', 16), '가운데로'))));
 
-    const section = el('div', { class: 'props-section' }, el('h4', { text: '속성' }));
+    const groups = {};
     def.fields.forEach((f) => {
       if (f.show && !f.show(comp.props)) return;
-      section.appendChild(fieldFor(f, comp));
+      const name = sectionOf(f, def);
+      (groups[name] = groups[name] || []).push(fieldFor(f, comp));
     });
-    if (def.note) section.appendChild(el('div', { class: 'note', text: def.note }));
-    root.appendChild(section);
+    ['내용', '동작', '모양', '글자'].forEach((name) => {
+      if (!groups[name]) return;
+      const section = el('div', { class: 'props-section' }, el('h4', { text: name }), groups[name]);
+      if (name === '내용' && def.note) section.appendChild(el('div', { class: 'note', text: def.note }));
+      root.appendChild(section);
+    });
 
-    root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '정리' }),
-      el('div', { class: 'btn-row' },
-        el('button', { text: '맨 앞으로', onclick: () => reorder('front') }),
-        el('button', { text: '앞으로', onclick: () => reorder('up') }),
-        el('button', { text: '뒤로', onclick: () => reorder('down') }),
-        el('button', { text: '맨 뒤로', onclick: () => reorder('back') })),
-      el('div', { class: 'btn-row' },
-        el('button', { text: '복제', onclick: () => pasteComponent(comp, GRID * 2) }),
-        el('button', { class: 'danger', text: '삭제', onclick: deleteSelected }))));
+    root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '겹치는 순서' }),
+      el('div', { class: 'segmented' },
+        [['front', '맨 앞으로'], ['up', '앞으로'], ['down', '뒤로'], ['back', '맨 뒤로']].map(([w, label]) =>
+          el('button', { title: label, onclick: () => reorder(w) }, svgIcon(w, 16))))));
+
+    root.appendChild(el('div', { class: 'actions' },
+      el('button', { class: 'outline', onclick: () => pasteComponent(comp, GRID * 2) }, svgIcon('copy', 16), '블록 복제'),
+      el('button', { class: 'outline danger', onclick: deleteSelected }, svgIcon('trash', 16), '블록 삭제')));
   }
 
   function renderScreenProps(root) {
     const s = screen();
     const theme = RT.themeOf(project);
-    root.appendChild(el('div', { class: 'props-title' }, el('span', { class: 'ico', text: '▯' }), `화면: ${s.name}`));
+    root.appendChild(el('div', { class: 'props-head' }, el('h2', { text: '속성' }), el('span', { text: `화면 · ${s.name}` })));
 
     const name = el('input', { type: 'text', value: s.name });
     name.addEventListener('input', () => { renameScreen(s, name.value, s.id + ':name'); renderScreens(); renderCanvas(); });
     const isStart = (project.startScreen || project.screens[0].id) === s.id;
-    const startBox = el('input', { type: 'checkbox', checked: isStart, disabled: isStart });
-    startBox.addEventListener('change', () => { mutate(() => { project.startScreen = s.id; }); renderAll(); });
 
     root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '이 화면' }),
       field('이름', name),
       field('배경색', colorControl(s.bg, theme.bg, (v) => { mutate(() => { s.bg = v; }, s.id + ':bg'); renderCanvas(); })),
-      el('label', { class: 'checkbox-field' }, startBox, '앱을 켜면 처음 보이는 화면'),
+      switchField('앱을 켜면 처음 보이는 화면', isStart, () => { mutate(() => { project.startScreen = s.id; }); renderAll(); }, isStart),
       el('div', { class: 'btn-row' },
-        el('button', { text: '화면 복제', onclick: () => duplicateScreen(s) }),
-        el('button', { class: 'danger', text: '화면 삭제', onclick: () => deleteScreen(s) }))));
+        el('button', { onclick: () => duplicateScreen(s) }, svgIcon('copy', 16), '화면 복제'),
+        el('button', { onclick: () => deleteScreen(s) }, svgIcon('trash', 16), '화면 삭제'))));
 
     const setTheme = (k) => (v) => {
       mutate(() => { project.theme = Object.assign({}, project.theme, { [k]: v || RT.DEFAULT_THEME[k] }); }, 'theme:' + k);
       renderCanvas();
     };
     const font = el('select', { onchange: () => setTheme('font')(font.value) },
-      [['system', '기본 고딕'], ['serif', '명조'], ['mono', '고정폭']].map(([v, l]) => el('option', { value: v, text: l })));
+      [['pretendard', 'Pretendard'], ['system', '시스템 고딕'], ['serif', '명조'], ['mono', '고정폭']].map(([v, l]) => el('option', { value: v, text: l })));
     font.value = theme.font;
+    const t = project.theme || {};
 
     root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '앱 전체 테마' }),
-      field('대표 색', colorControl(project.theme && project.theme.primary, RT.DEFAULT_THEME.primary, setTheme('primary')), '헤더, 버튼, 내 말풍선 등 색을 비워둔 오브젝트에 쓰여요'),
-      field('기본 배경색', colorControl(project.theme && project.theme.bg, RT.DEFAULT_THEME.bg, setTheme('bg'))),
-      field('기본 글자색', colorControl(project.theme && project.theme.text, RT.DEFAULT_THEME.text, setTheme('text'))),
+      field('대표 색', colorControl(t.primary === RT.DEFAULT_THEME.primary ? '' : t.primary, RT.DEFAULT_THEME.primary, setTheme('primary')), '헤더, 버튼, 내 말풍선처럼 색을 "기본"으로 둔 블록에 쓰여요'),
+      field('기본 배경색', colorControl(t.bg === RT.DEFAULT_THEME.bg ? '' : t.bg, RT.DEFAULT_THEME.bg, setTheme('bg'))),
+      field('기본 글자색', colorControl(t.text === RT.DEFAULT_THEME.text ? '' : t.text, RT.DEFAULT_THEME.text, setTheme('text'))),
       field('글꼴', font)));
 
     root.appendChild(el('div', { class: 'note' },
-      '① 왼쪽에서 오브젝트를 휴대폰 화면으로 끌어다 놓으세요.', el('br'),
-      '② 오브젝트를 누르면 오른쪽에서 글자·색·동작을 바꿀 수 있어요.', el('br'),
-      '③ 모서리 핸들로 크기를, 끌어서 위치를 바꿔요.', el('br'),
-      '④ ▶ 미리보기로 실제처럼 눌러보고, "앱 내보내기"로 HTML 앱을 받으세요.'));
+      '블록을 누르면 여기서 색, 글꼴, 모양을 바꿀 수 있어요. ',
+      '빈 곳을 누르면 이 화면과 앱 전체 테마를 바꿔요.'));
   }
 
   // ---------------------------------------------------------------- 캔버스 마우스/터치 조작
@@ -724,14 +896,16 @@
   function setupCanvas() {
     const target = $('#phoneScreen');
     target.addEventListener('pointerdown', onPointerDown);
+    const zone = el('div', { id: 'dropZone', class: 'drop-zone' }, svgIcon('plus', 26), el('span', { text: '여기에 오브젝트를 놓으세요' }));
+    target.appendChild(zone);
     target.addEventListener('dragover', (e) => {
       if (!e.dataTransfer.types.includes('text/cm-type')) return;
       e.preventDefault();
-      $('#stage').classList.add('drop-target');
+      zone.classList.add('active');
     });
-    target.addEventListener('dragleave', () => $('#stage').classList.remove('drop-target'));
+    target.addEventListener('dragleave', (e) => { if (!target.contains(e.relatedTarget)) zone.classList.remove('active'); });
     target.addEventListener('drop', (e) => {
-      $('#stage').classList.remove('drop-target');
+      zone.classList.remove('active');
       const type = e.dataTransfer.getData('text/cm-type');
       if (!DEFS[type]) return;
       e.preventDefault();
@@ -741,17 +915,22 @@
     $('#canvasArea').addEventListener('pointerdown', (e) => {
       if (e.target === $('#canvasArea') && selectedId) select(null);
     });
-    window.addEventListener('resize', () => { fitCanvas(size().w, size().h); renderSelection(); });
+    window.addEventListener('resize', () => { fitCanvas(); renderSelection(); });
   }
 
   // ---------------------------------------------------------------- 키보드
 
   function setupKeyboard() {
     document.addEventListener('keydown', (e) => {
+      if (!$('#welcome').hidden) {
+        if (e.key === 'Escape' || e.key === 'Enter') closeWelcome();
+        return;
+      }
       if (!$('#previewModal').hidden) {
         if (e.key === 'Escape') closePreview();
         return;
       }
+      if (e.key === 'Escape' && !$('#moreMenu').hidden) { $('#moreMenu').hidden = true; return; }
       const typing = e.target.closest('input, textarea, select, [contenteditable]');
       const mod = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
@@ -791,8 +970,10 @@
   function startPreview(fromScreen) {
     const { w: W, h: H } = size();
     const holder = $('.preview-holder');
-    const scale = Math.max(0.2, Math.min(1, (holder.clientWidth - 40) / (W + 20), (holder.clientHeight - 40) / (H + 20)));
+    const scale = Math.max(0.2, Math.min(1, (holder.clientWidth - 40) / (W + 16), (holder.clientHeight - 90) / H));
     const mount = $('#previewMount');
+    const start = RT.findScreen(project, fromScreen) || project.screens[0];
+    $('#previewPhone').style.background = start.bg || RT.themeOf(project).bg;
     RT.mount(mount, project, { screenId: fromScreen });
     mount.firstChild.style.transform = `scale(${scale})`;
     Object.assign($('#previewScreen').style, { width: W * scale + 'px', height: H * scale + 'px' });
@@ -880,17 +1061,52 @@
 
   // ---------------------------------------------------------------- 상단 바
 
-  function setupTopbar() {
-    const tpl = $('#templateSelect');
-    Object.entries(TEMPLATES).forEach(([k, t]) => tpl.appendChild(el('option', { value: k, text: t.label })));
-    tpl.addEventListener('change', () => {
-      const k = tpl.value;
-      tpl.value = '';
-      if (!k) return;
-      if (!confirm(`"${TEMPLATES[k].label}" 템플릿으로 새로 시작할까요?\n지금 작업은 사라져요. (먼저 "저장"을 누르면 보관할 수 있어요)`)) return;
-      loadProject(TEMPLATES[k].build());
-    });
+  function startFromTemplate(k) {
+    if (!confirm(`"${TEMPLATES[k].label}" 템플릿으로 새로 시작할까요?\n지금 작업은 사라져요. (먼저 "저장"을 누르면 보관할 수 있어요)`)) return;
+    loadProject(TEMPLATES[k].build());
+  }
 
+  function setupMenu() {
+    const menu = $('#moreMenu');
+    const item = (iconName, label, fn) => el('button', { onclick: () => { menu.hidden = true; fn(); } }, svgIcon(iconName, 16), label);
+    menu.append(
+      el('div', { class: 'menu-label', text: '템플릿으로 새로 시작' }),
+      ...Object.entries(TEMPLATES).map(([k, t]) => item('template', t.label, () => startFromTemplate(k))),
+      el('hr'),
+      item('folder', '파일 열기 (JSON · 내보낸 HTML)', () => $('#fileInput').click()),
+      item('download', '앱 내보내기 (HTML 파일)', exportHtml),
+      el('hr'),
+      item('help', '시작 안내 다시 보기', openWelcome));
+    $('#moreBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.menu-wrap')) menu.hidden = true; });
+  }
+
+  // ---------------------------------------------------------------- 환영 안내
+
+  const WELCOME_KEY = 'custorming.welcomed';
+
+  function openWelcome() {
+    $('#welcome').hidden = false;
+    $('#welcomeGo').focus();
+  }
+
+  function closeWelcome() {
+    $('#welcome').hidden = true;
+    try { localStorage.setItem(WELCOME_KEY, '1'); } catch (e) { /* 저장 못 해도 괜찮음 */ }
+  }
+
+  function setupWelcome() {
+    $('#welcomeGo').addEventListener('click', closeWelcome);
+    $('#welcomeClose').addEventListener('click', closeWelcome);
+    $('#welcome').addEventListener('pointerdown', (e) => { if (e.target === $('#welcome')) closeWelcome(); });
+    $('#helpBtn').addEventListener('click', openWelcome);
+    let seen = false;
+    try { seen = !!localStorage.getItem(WELCOME_KEY); } catch (e) { seen = false; }
+    if (!seen) openWelcome();
+  }
+
+  function setupTopbar() {
+    setupMenu();
     const device = $('#deviceSelect');
     DEVICES.forEach(([v, label]) => device.appendChild(el('option', { value: v, text: label })));
     device.addEventListener('change', () => {
@@ -918,8 +1134,9 @@
     $('#previewClose').addEventListener('click', closePreview);
     $('#previewRestart').addEventListener('click', () => startPreview(project.startScreen));
     $('#saveBtn').addEventListener('click', saveJson);
-    $('#exportBtn').addEventListener('click', exportHtml);
-    $('#openBtn').addEventListener('click', () => $('#fileInput').click());
+    $('#zoomIn').addEventListener('click', () => setZoom(1));
+    $('#zoomOut').addEventListener('click', () => setZoom(-1));
+    $('#zoomLabel').addEventListener('click', () => setZoom('fit'));
     $('#fileInput').addEventListener('change', (e) => {
       if (e.target.files[0]) openFile(e.target.files[0]);
       e.target.value = '';
@@ -930,11 +1147,15 @@
   // ---------------------------------------------------------------- 시작
 
   RT.injectCSS();
+  hydrateIcons();
   renderPalette();
   setupTopbar();
   setupCanvas();
   setupKeyboard();
+  setupWelcome();
   renderAll();
+  updateSaveStatus();
+  setInterval(updateSaveStatus, 30000);
 
   // 테스트와 콘솔에서 쓰기 위한 창구
   window.custorming = {

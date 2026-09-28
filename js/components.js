@@ -1,5 +1,6 @@
 /*
- * 팔레트에 올라가는 오브젝트 정의.
+ * 팔레트에 올라가는 오브젝트 정의. 팔레트에는 적힌 순서대로 그룹별로 나온다.
+ * - desc: 팔레트 줄 모양(레이아웃 그룹)에서 보이는 설명
  * - w: 'full' 이면 화면 너비에 맞춤
  * - dock: 'top' | 'bottom' 이면 처음 놓을 때 화면 위/아래에 붙임
  * - props: 기본 속성값 (색상의 빈 문자열 = 테마 색 사용)
@@ -9,53 +10,94 @@ window.CM_COMPONENTS = (function () {
   // fallback: 비워뒀을 때 쓰이는 색. 'primary' / 'text' 는 테마 색
   const COLOR = (key, label, fallback) => ({ key, label, type: 'color', fallback: fallback || '' });
   const SIZE = (key, label, min, max) => ({ key, label, type: 'number', min, max });
+  const ALIGN = { key: 'align', label: '정렬', type: 'select', options: [['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']] };
+  const ICON_HINT = '이모지나 아이콘 이름: home list bell user chat users settings search heart star calendar plus more cart';
 
   return {
+    button: {
+      label: '버튼', group: '기본', w: 200, h: 48,
+      props: { label: '버튼', variant: 'filled', action: 'alert', target: '', message: '버튼을 눌렀어요!', url: '', size: 16, radius: 12, bg: '', color: '' },
+      fields: [
+        { key: 'label', label: '글자', type: 'text' },
+        { key: 'variant', label: '모양', type: 'select', options: [['filled', '채움'], ['outline', '테두리'], ['text', '글자만']] },
+        {
+          key: 'action', label: '누르면', type: 'select',
+          options: [['none', '아무것도 안 함'], ['go', '다른 화면으로 이동'], ['back', '뒤로 가기'], ['alert', '알림 띄우기'], ['send', '메시지 보내기'], ['link', '웹 링크 열기']],
+        },
+        { key: 'target', label: '이동할 화면', type: 'screen', show: (p) => p.action === 'go' },
+        { key: 'message', label: '내용', type: 'text', show: (p) => p.action === 'alert' || p.action === 'send' },
+        { key: 'url', label: '링크 주소', type: 'text', show: (p) => p.action === 'link' },
+        SIZE('size', '글자 크기', 8, 48),
+        SIZE('radius', '모서리 둥글기', 0, 60),
+        COLOR('bg', '버튼 색', 'primary'),
+        COLOR('color', '글자색'),
+      ],
+    },
+
+    image: {
+      label: '이미지', group: '기본', w: 320, h: 180,
+      props: { src: '', fit: 'cover', radius: 16 },
+      fields: [
+        { key: 'src', label: '이미지', type: 'image' },
+        { key: 'fit', label: '맞춤', type: 'select', options: [['cover', '꽉 채우기'], ['contain', '전체 보이기']] },
+        SIZE('radius', '모서리 둥글기', 0, 200),
+      ],
+    },
+
+    text: {
+      label: '텍스트', group: '기본', w: 280, h: 40,
+      props: { text: '텍스트를 입력하세요', size: 16, bold: false, align: 'left', color: '' },
+      fields: [
+        { key: 'text', label: '내용', type: 'textarea', rows: 3 },
+        SIZE('size', '글자 크기', 8, 72),
+        { key: 'bold', label: '굵게', type: 'checkbox' },
+        ALIGN,
+        COLOR('color', '글자색', 'text'),
+      ],
+    },
+
+    card: {
+      label: '카드', group: '기본', w: 320, h: 110,
+      props: { title: '카드 제목', body: '카드 내용을 입력하세요.', radius: 16, shadow: true, target: '', bg: '' },
+      fields: [
+        { key: 'title', label: '제목', type: 'text' },
+        { key: 'body', label: '내용', type: 'textarea', rows: 3 },
+        { key: 'target', label: '누르면 이동할 화면', type: 'screen' },
+        SIZE('radius', '모서리 둥글기', 0, 60),
+        { key: 'shadow', label: '그림자', type: 'checkbox' },
+        COLOR('bg', '배경색', '#ffffff'),
+      ],
+    },
+
+    list: {
+      label: '목록', group: '기본', w: 'full', h: 280,
+      props: { items: '첫 번째 항목|설명\n두 번째 항목|설명\n세 번째 항목|설명', avatars: false, chevron: true, target: '', bg: '', color: '' },
+      fields: [
+        { key: 'items', label: '항목', type: 'textarea', rows: 5, hint: '한 줄에 하나씩. "제목|부제목" 형식도 돼요' },
+        { key: 'avatars', label: '프로필 동그라미 표시', type: 'checkbox' },
+        { key: 'chevron', label: '오른쪽 화살표 표시', type: 'checkbox' },
+        { key: 'target', label: '누르면 이동할 화면', type: 'screen' },
+        COLOR('color', '글자색', 'text'),
+        COLOR('bg', '배경색'),
+      ],
+    },
+
     header: {
-      label: '헤더', icon: '▔', group: '레이아웃', w: 'full', h: 56, dock: 'top',
+      label: '헤더', group: '기본', w: 'full', h: 56, dock: 'top',
       props: { title: '제목', align: 'left', showBack: false, right: '', size: 18, bg: '', color: '' },
       fields: [
         { key: 'title', label: '제목', type: 'text' },
-        { key: 'align', label: '정렬', type: 'select', options: [['left', '왼쪽'], ['center', '가운데']] },
         { key: 'showBack', label: '뒤로가기 버튼 표시', type: 'checkbox' },
-        { key: 'right', label: '오른쪽 아이콘', type: 'text', hint: '이모지나 기호 (예: ⋮ ＋ 🔍)' },
+        { key: 'right', label: '오른쪽 아이콘', type: 'text', hint: ICON_HINT },
         SIZE('size', '글자 크기', 10, 40),
+        { key: 'align', label: '정렬', type: 'select', options: [['left', '왼쪽'], ['center', '가운데']] },
         COLOR('bg', '배경색', 'primary'),
         COLOR('color', '글자색', '#ffffff'),
       ],
     },
 
-    tabbar: {
-      label: '탭 바', icon: '▁', group: '레이아웃', w: 'full', h: 64, dock: 'bottom',
-      props: { items: '🏠 홈 = 홈\n💬 채팅 = 채팅\n⚙️ 설정 = 설정', bg: '', activeColor: '', color: '' },
-      fields: [
-        { key: 'items', label: '탭 목록', type: 'textarea', rows: 4, hint: '한 줄에 하나씩 "아이콘 이름 = 이동할 화면 이름"' },
-        COLOR('bg', '배경색', '#ffffff'),
-        COLOR('activeColor', '선택된 탭 색', 'primary'),
-        COLOR('color', '기본 탭 색', '#9a9aa0'),
-      ],
-    },
-
-    box: {
-      label: '박스', icon: '▢', group: '레이아웃', w: 320, h: 120,
-      props: { bg: '#f2f2f7', radius: 16, borderWidth: 0, borderColor: '', shadow: false },
-      fields: [
-        COLOR('bg', '배경색'),
-        SIZE('radius', '모서리 둥글기', 0, 200),
-        SIZE('borderWidth', '테두리 두께', 0, 20),
-        COLOR('borderColor', '테두리 색', '#dcdce2'),
-        { key: 'shadow', label: '그림자', type: 'checkbox' },
-      ],
-    },
-
-    divider: {
-      label: '구분선', icon: '―', group: '레이아웃', w: 'full', h: 16,
-      props: { thickness: 1, color: '' },
-      fields: [SIZE('thickness', '두께', 1, 20), COLOR('color', '색')],
-    },
-
     chat: {
-      label: '메시지 창', icon: '💬', group: '메시지', w: 'full', h: 520,
+      label: '메시지 창', group: '메시지', w: 'full', h: 520,
       props: {
         messages: '상대: 안녕하세요!\n나: 반가워요 👋',
         autoReply: '좋아요!\n그렇군요 😊\n"{메시지}" 라고요?',
@@ -75,7 +117,7 @@ window.CM_COMPONENTS = (function () {
     },
 
     chatInput: {
-      label: '메시지 입력창', icon: '⌨', group: '메시지', w: 'full', h: 60, dock: 'bottom',
+      label: '메시지 입력창', group: '메시지', w: 'full', h: 60, dock: 'bottom',
       props: { placeholder: '메시지를 입력하세요', buttonText: '전송', bg: '', buttonColor: '' },
       fields: [
         { key: 'placeholder', label: '안내 문구', type: 'text' },
@@ -86,76 +128,34 @@ window.CM_COMPONENTS = (function () {
       note: '같은 화면의 메시지 창으로 메시지를 보내요.',
     },
 
-    list: {
-      label: '목록', icon: '☰', group: '메시지', w: 'full', h: 280,
-      props: { items: '첫 번째 항목|설명\n두 번째 항목|설명\n세 번째 항목|설명', avatars: false, chevron: true, target: '', bg: '', color: '' },
-      fields: [
-        { key: 'items', label: '항목', type: 'textarea', rows: 5, hint: '한 줄에 하나씩. "제목|부제목" 형식도 돼요' },
-        { key: 'avatars', label: '프로필 동그라미 표시', type: 'checkbox' },
-        { key: 'chevron', label: '오른쪽 화살표 표시', type: 'checkbox' },
-        { key: 'target', label: '누르면 이동할 화면', type: 'screen' },
-        COLOR('color', '글자색', 'text'),
-        COLOR('bg', '배경색'),
-      ],
-    },
-
-    text: {
-      label: '텍스트', icon: 'T', group: '기본', w: 280, h: 40,
-      props: { text: '텍스트를 입력하세요', size: 16, bold: false, align: 'left', color: '' },
-      fields: [
-        { key: 'text', label: '내용', type: 'textarea', rows: 3 },
-        SIZE('size', '글자 크기', 8, 96),
-        { key: 'bold', label: '굵게', type: 'checkbox' },
-        { key: 'align', label: '정렬', type: 'select', options: [['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']] },
-        COLOR('color', '글자색', 'text'),
-      ],
-    },
-
-    button: {
-      label: '버튼', icon: '⬭', group: '기본', w: 200, h: 48,
-      props: { label: '버튼', variant: 'filled', action: 'alert', target: '', message: '버튼을 눌렀어요!', url: '', size: 16, radius: 12, bg: '', color: '' },
-      fields: [
-        { key: 'label', label: '글자', type: 'text' },
-        { key: 'variant', label: '모양', type: 'select', options: [['filled', '채움'], ['outline', '테두리'], ['text', '글자만']] },
-        {
-          key: 'action', label: '누르면', type: 'select',
-          options: [['none', '아무것도 안 함'], ['go', '다른 화면으로 이동'], ['back', '뒤로 가기'], ['alert', '알림 띄우기'], ['send', '메시지 보내기'], ['link', '웹 링크 열기']],
-        },
-        { key: 'target', label: '이동할 화면', type: 'screen', show: (p) => p.action === 'go' },
-        { key: 'message', label: '내용', type: 'text', show: (p) => p.action === 'alert' || p.action === 'send' },
-        { key: 'url', label: '링크 주소', type: 'text', show: (p) => p.action === 'link' },
-        SIZE('size', '글자 크기', 8, 48),
-        SIZE('radius', '모서리 둥글기', 0, 100),
-        COLOR('bg', '버튼 색', 'primary'),
-        COLOR('color', '글자색'),
-      ],
-    },
-
-    image: {
-      label: '이미지', icon: '🖼', group: '기본', w: 320, h: 180,
-      props: { src: '', fit: 'cover', radius: 12 },
-      fields: [
-        { key: 'src', label: '이미지', type: 'image' },
-        { key: 'fit', label: '맞춤', type: 'select', options: [['cover', '꽉 채우기'], ['contain', '전체 보이기']] },
-        SIZE('radius', '모서리 둥글기', 0, 200),
-      ],
-    },
-
-    card: {
-      label: '카드', icon: '▤', group: '기본', w: 320, h: 110,
-      props: { title: '카드 제목', body: '카드 내용을 입력하세요.', radius: 16, shadow: true, target: '', bg: '' },
+    checklist: {
+      label: '체크리스트', group: '데이터', w: 320, h: 150,
+      props: { title: '오늘', items: 'x 디자인 파일 검토\n온보딩 화면 출시\n마케팅 팀과 통화', radius: 16, color: '', bg: '' },
       fields: [
         { key: 'title', label: '제목', type: 'text' },
-        { key: 'body', label: '내용', type: 'textarea', rows: 3 },
-        { key: 'target', label: '누르면 이동할 화면', type: 'screen' },
-        SIZE('radius', '모서리 둥글기', 0, 60),
-        { key: 'shadow', label: '그림자', type: 'checkbox' },
+        { key: 'items', label: '할 일', type: 'textarea', rows: 4, hint: '한 줄에 하나씩. 앞에 "x "를 붙이면 완료된 항목. 미리보기에서 눌러서 체크할 수 있어요' },
+        SIZE('radius', '모서리 둥글기', 0, 40),
+        COLOR('color', '체크 색', 'primary'),
         COLOR('bg', '배경색', '#ffffff'),
       ],
     },
 
+    stat: {
+      label: '통계 카드', group: '데이터', w: 320, h: 96,
+      props: { label: '이번 주 완료', value: '18', badge: '+12%', size: 28, radius: 16, bg: '', color: '' },
+      fields: [
+        { key: 'label', label: '제목', type: 'text' },
+        { key: 'value', label: '숫자', type: 'text' },
+        { key: 'badge', label: '배지', type: 'text', hint: '오른쪽 아래 작은 표시. 비우면 숨김' },
+        SIZE('size', '숫자 크기', 14, 64),
+        SIZE('radius', '모서리 둥글기', 0, 40),
+        COLOR('bg', '배경색', '#8b5cf6'),
+        COLOR('color', '글자색', '#ffffff'),
+      ],
+    },
+
     avatar: {
-      label: '프로필', icon: '◉', group: '기본', w: 80, h: 80,
+      label: '프로필', group: '데이터', w: 80, h: 80,
       props: { text: '나', src: '', bg: '', color: '' },
       fields: [
         { key: 'text', label: '글자 (사진이 없을 때)', type: 'text' },
@@ -166,7 +166,7 @@ window.CM_COMPONENTS = (function () {
     },
 
     input: {
-      label: '입력 칸', icon: '▭', group: '입력', w: 312, h: 72,
+      label: '입력 칸', group: '입력', w: 312, h: 72,
       props: { label: '이름', placeholder: '입력하세요', inputType: 'text', radius: 10 },
       fields: [
         { key: 'label', label: '제목', type: 'text' },
@@ -177,13 +177,44 @@ window.CM_COMPONENTS = (function () {
     },
 
     toggle: {
-      label: '스위치', icon: '◐', group: '입력', w: 'full', h: 52,
+      label: '스위치', group: '입력', w: 'full', h: 52,
       props: { label: '알림 받기', on: true, color: '' },
       fields: [
         { key: 'label', label: '글자', type: 'text' },
         { key: 'on', label: '처음에 켜짐', type: 'checkbox' },
         COLOR('color', '켜졌을 때 색', 'primary'),
       ],
+    },
+
+    box: {
+      label: '섹션', desc: '배경 박스 · 영역 나누기', group: '레이아웃', w: 320, h: 120,
+      props: { bg: '#f8fafc', radius: 16, borderWidth: 0, borderColor: '', shadow: false },
+      fields: [
+        COLOR('bg', '배경색'),
+        SIZE('radius', '모서리 둥글기', 0, 200),
+        SIZE('borderWidth', '테두리 두께', 0, 20),
+        COLOR('borderColor', '테두리 색', '#dcdce2'),
+        { key: 'shadow', label: '그림자', type: 'checkbox' },
+      ],
+    },
+
+    tabbar: {
+      label: '탭 바', desc: '화면 아래 메뉴', group: '레이아웃', w: 'full', h: 72, dock: 'bottom',
+      props: { items: 'home 홈 = 홈\nchat 채팅 = 채팅\nsettings 설정 = 설정', style: 'pill', showLabels: true, bg: '', activeColor: '', color: '' },
+      fields: [
+        { key: 'items', label: '탭 목록', type: 'textarea', rows: 4, hint: '한 줄에 하나씩 "아이콘 이름 = 이동할 화면". ' + ICON_HINT },
+        { key: 'style', label: '선택 표시', type: 'select', options: [['pill', '배경 강조'], ['plain', '색만']] },
+        { key: 'showLabels', label: '탭 이름 표시', type: 'checkbox' },
+        COLOR('bg', '배경색', '#ffffff'),
+        COLOR('activeColor', '선택된 탭 색', 'primary'),
+        COLOR('color', '기본 탭 색', '#94a3b8'),
+      ],
+    },
+
+    divider: {
+      label: '구분선', desc: '가로 선', group: '레이아웃', w: 'full', h: 16,
+      props: { thickness: 1, color: '' },
+      fields: [SIZE('thickness', '두께', 1, 20), COLOR('color', '색')],
     },
   };
 })();
