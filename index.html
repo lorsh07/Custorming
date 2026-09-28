@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Custorming — 앱 빌더</title>
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Custorming</div>
+    <input id="appName" class="app-name" title="앱 이름" spellcheck="false">
+    <select id="templateSelect" title="템플릿으로 새로 시작">
+      <option value="">템플릿으로 시작…</option>
+    </select>
+    <select id="deviceSelect" title="화면 크기"></select>
+    <div class="spacer"></div>
+    <button id="undoBtn" class="icon-btn" title="실행 취소 (Ctrl+Z)">↶</button>
+    <button id="redoBtn" class="icon-btn" title="다시 실행 (Ctrl+Shift+Z)">↷</button>
+    <label class="check" title="8px 격자와 다른 오브젝트에 맞춰 붙이기"><input id="snapToggle" type="checkbox" checked> 자석</label>
+    <button id="openBtn" title="JSON 또는 내보낸 HTML 불러오기">열기</button>
+    <button id="saveBtn" title="프로젝트를 JSON 파일로 저장">저장</button>
+    <button id="exportBtn" title="혼자 실행되는 HTML 앱으로 내보내기">앱 내보내기</button>
+    <button id="previewBtn" class="primary">▶ 미리보기</button>
+    <input id="fileInput" type="file" accept=".json,.html,application/json,text/html" hidden>
+  </header>
+
+  <main class="workspace">
+    <aside class="panel left">
+      <section>
+        <h3>오브젝트 <small>끌어다 놓거나 클릭</small></h3>
+        <div id="palette" class="palette"></div>
+      </section>
+      <section>
+        <h3>화면 <button id="addScreenBtn" class="mini" title="화면 추가">＋</button></h3>
+        <ul id="screenList" class="rows"></ul>
+      </section>
+      <section class="grow">
+        <h3>레이어 <small>위가 앞쪽</small></h3>
+        <ul id="layerList" class="rows"></ul>
+      </section>
+    </aside>
+
+    <section id="canvasArea" class="canvas-area">
+      <div id="phone" class="phone">
+        <div id="phoneScreen" class="phone-screen">
+          <div id="stage" class="editor-stage"></div>
+        </div>
+      </div>
+      <div class="canvas-hint">Delete 삭제 · Ctrl+D 복제 · Ctrl+C/V 복사/붙여넣기 · 방향키 이동(Shift 10px)</div>
+    </section>
+
+    <aside class="panel right">
+      <div id="props"></div>
+    </aside>
+  </main>
+
+  <div id="previewModal" class="modal" hidden>
+    <div class="modal-bar">
+      <span id="previewTitle"></span>
+      <div class="spacer"></div>
+      <button id="previewRestart">처음부터</button>
+      <button id="previewClose" class="primary">닫기 (Esc)</button>
+    </div>
+    <div class="preview-holder">
+      <div id="previewPhone" class="phone">
+        <div id="previewScreen" class="phone-screen"><div id="previewMount"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/runtime.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/templates.js"></script>
+  <script src="js/editor.js"></script>
+</body>
+</html>
