@@ -1,6 +1,7 @@
 /*
  * Custorming 클라우드 저장소 (Firestore REST API)
- * 로그인한 사람의 작업을 users/{uid}/projects/current 문서 하나에 저장한다.
+ * 로그인한 사람의 앱을 하나씩 users/{uid}/projects/{앱 id} 문서에 저장한다.
+ * (예전 버전이 쓰던 users/{uid}/projects/current 문서는 목록을 읽을 때 새 방식으로 옮긴다)
  *
  * 필요한 Firestore 보안 규칙 (본인 데이터만 읽고 쓰기):
  *   match /users/{uid}/{document=**} {
@@ -28,11 +29,15 @@ window.CustormingCloud = (function () {
     return 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(projectId) + '/databases/(default)/documents';
   }
 
-  function docUrl() {
+  function collectionUrl() {
     const conf = AUTH.cloudConfig();
     const user = AUTH.current();
     if (!conf || !user || !user.uid) throw new Error('클라우드에 로그인되어 있지 않아요');
-    return base(conf.projectId) + '/users/' + encodeURIComponent(user.uid) + '/projects/current';
+    return base(conf.projectId) + '/users/' + encodeURIComponent(user.uid) + '/projects';
+  }
+
+  function docUrl(appId) {
+    return collectionUrl() + '/' + encodeURIComponent(appId);
   }
 
   function explain(status, message) {
@@ -69,11 +74,11 @@ window.CustormingCloud = (function () {
     throw err;
   }
 
-  // 클라우드에 저장된 작업 { project, updateTime } 또는 없으면 null
-  async function load() {
+  // 클라우드에 저장된 앱 { project, updateTime } 또는 없으면 null
+  async function load(appId) {
     const token = await AUTH.getIdToken();
     try {
-      const { data } = await request('GET', docUrl(), null, token);
+      const { data } = await request('GET', docUrl(appId), null, token);
       const json = data.fields && data.fields.data && data.fields.data.stringValue;
       return json ? { project: JSON.parse(json), updateTime: data.updateTime } : null;
     } catch (err) {
@@ -90,7 +95,7 @@ window.CustormingCloud = (function () {
       throw new Error('작업이 너무 커서 클라우드에 저장할 수 없어요. 올린 이미지 크기를 줄여 주세요');
     }
     const token = await AUTH.getIdToken();
-    let url = docUrl();
+    let url = docUrl(project.id);
     if (baseUpdateTime === null) url += '?currentDocument.exists=false';
     else if (baseUpdateTime) url += '?currentDocument.updateTime=' + encodeURIComponent(baseUpdateTime);
     const body = {
@@ -102,6 +107,50 @@ window.CustormingCloud = (function () {
     };
     const { data } = await request('PATCH', url, body, token);
     return data.updateTime;
+  }
+
+  // 앱 목록 [{ id, name, savedAt, updateTime }] (내용은 빼고 이름과 시간만 받는다)
+  async function list() {
+    const token = await AUTH.getIdToken();
+    const apps = [];
+    let pageToken = '';
+    do {
+      const url = collectionUrl() + '?pageSize=300&mask.fieldPaths=name&mask.fieldPaths=savedAt' +
+        (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+      const { data } = await request('GET', url, null, token);
+      (data.documents || []).forEach((doc) => {
+        const f = doc.fields || {};
+        apps.push({
+          id: decodeURIComponent(doc.name.split('/').pop()),
+          name: (f.name && f.name.stringValue) || '이름 없는 앱',
+          savedAt: f.savedAt ? Date.parse(f.savedAt.timestampValue) : Date.parse(doc.updateTime),
+          updateTime: doc.updateTime,
+        });
+      });
+      pageToken = data.nextPageToken || '';
+    } while (pageToken);
+
+    // 예전 방식(current 문서 하나)으로 저장된 작업을 새 방식으로 옮긴다
+    const legacy = apps.find((a) => a.id === 'current');
+    if (legacy) {
+      apps.splice(apps.indexOf(legacy), 1);
+      const old = await load('current');
+      if (old && old.project && old.project.id && !apps.some((a) => a.id === old.project.id)) {
+        const updateTime = await save(old.project, null);
+        apps.push({ id: old.project.id, name: old.project.name || '이름 없는 앱', savedAt: Date.now(), updateTime });
+      }
+      await remove('current');
+    }
+    return apps;
+  }
+
+  async function remove(appId) {
+    const token = await AUTH.getIdToken();
+    try {
+      await request('DELETE', docUrl(appId), null, token);
+    } catch (err) {
+      if (!err.missingDoc) throw err;
+    }
   }
 
   // 설정 창의 "연결 확인": 로그인 없이 문서를 읽어서 돌아온 응답으로 상태를 판단한다
@@ -119,5 +168,5 @@ window.CustormingCloud = (function () {
     }
   }
 
-  return { load, save, checkFirestore, RULES };
+  return { load, save, list, remove, checkFirestore, RULES };
 })();

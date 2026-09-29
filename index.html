@@ -13,6 +13,7 @@
       <span class="logo" data-icon="puzzle"></span>
       <span class="brand-name">Custorming</span>
     </div>
+    <button id="appsBtn" class="ghost apps-btn" title="내 앱 목록: 여러 앱을 만들고 골라서 열기"><span data-icon="apps"></span>내 앱</button>
     <input id="appName" class="app-name" title="앱 이름" spellcheck="false">
     <span id="saveStatus" class="status-pill">자동 저장됨</span>
     <div class="spacer"></div>
@@ -145,6 +146,19 @@
       </form>
       <button id="authLater" type="button" class="later-btn">나중에 할게요 — 게스트로 계속하기</button>
       <p id="authFineprint" class="auth-fineprint"></p>
+    </div>
+  </div>
+
+  <div id="appsModal" class="welcome-backdrop" hidden>
+    <div class="welcome apps" role="dialog" aria-labelledby="appsTitle">
+      <button id="appsClose" class="welcome-close" title="닫기" data-icon="x"></button>
+      <div class="apps-head">
+        <h2 id="appsTitle">내 앱</h2>
+        <span id="appsSync" class="apps-sync" hidden>클라우드와 맞추는 중…</span>
+      </div>
+      <p id="appsWho" class="apps-who"></p>
+      <div id="appsTemplates" class="apps-templates" hidden></div>
+      <div id="appsGrid" class="apps-grid"></div>
     </div>
   </div>
 

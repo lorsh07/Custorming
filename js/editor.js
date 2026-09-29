@@ -64,20 +64,84 @@
   let lastKey = null;
   let lastTime = 0;
 
-  // 게스트 작업과 계정별 작업을 따로 보관한다
-  function storageKey() {
-    const user = AUTH.current();
-    return user ? `${STORAGE_KEY}:${user.id || user.email}` : STORAGE_KEY;
+  // ---------------------------------------------------------------- 앱 목록 (이 기기)
+  // 게스트와 계정마다 앱 목록을 따로 보관한다.
+  //   custorming.apps:<scope>            [{ id, name, updatedAt, remote? }]  (remote = 클라우드에만 있음)
+  //   custorming.app:<scope>:<앱 id>      앱 내용
+  //   custorming.current-app:<scope>     마지막으로 연 앱
+
+  // (아래 함수들은 상태를 만들기 전에 불리므로 const 화살표 함수가 아닌 함수 선언으로 둔다)
+  function scope() { const u = AUTH.current(); return u ? (u.id || u.email) : 'guest'; }
+  function indexKey() { return `custorming.apps:${scope()}`; }
+  function appKey(id) { return `custorming.app:${scope()}:${id}`; }
+  function currentKey() { return `custorming.current-app:${scope()}`; }
+
+  function lsGet(key, fallback) {
+    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
+  }
+  function lsSet(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
   }
 
-  function loadStored() {
+  // 예전 버전은 계정마다 작업 하나만 저장했다. 처음 열 때 목록의 첫 앱으로 옮긴다.
+  function migrateLegacy() {
+    const oldKey = scope() === 'guest' ? STORAGE_KEY : `${STORAGE_KEY}:${scope()}`;
+    const old = lsGet(oldKey, null);
+    if (!isProject(old)) return;
+    ensureId(old);
     try {
-      const raw = localStorage.getItem(storageKey());
-      const data = raw && JSON.parse(raw);
-      return isProject(data) ? data : null;
-    } catch (e) {
-      return null;
+      lsSet(appKey(old.id), old);
+      const list = lsGet(indexKey(), []).filter((a) => a.id !== old.id);
+      list.push({ id: old.id, name: old.name || '이름 없는 앱', updatedAt: Date.now() });
+      lsSet(indexKey(), list);
+      if (!lsGet(currentKey(), null)) lsSet(currentKey(), old.id);
+      localStorage.removeItem(oldKey);
+    } catch (e) { /* 공간이 없으면 다음에 다시 시도 */ }
+  }
+
+  function appIndex() {
+    migrateLegacy();
+    return lsGet(indexKey(), []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+
+  function updateIndex(fn) {
+    const list = lsGet(indexKey(), []);
+    fn(list);
+    lsSet(indexKey(), list);
+  }
+
+  function readApp(id) {
+    const data = lsGet(appKey(id), null);
+    return isProject(data) ? data : null;
+  }
+
+  function writeApp(p, when) {
+    lsSet(appKey(p.id), p);
+    updateIndex((list) => {
+      const entry = list.find((a) => a.id === p.id);
+      const next = { id: p.id, name: p.name || '이름 없는 앱', updatedAt: when || Date.now() };
+      if (entry) Object.assign(entry, next, { remote: false });
+      else list.push(next);
+    });
+  }
+
+  function forgetApp(id) {
+    localStorage.removeItem(appKey(id));
+    updateIndex((list) => { const i = list.findIndex((a) => a.id === id); if (i >= 0) list.splice(i, 1); });
+    if (lsGet(currentKey(), null) === id) localStorage.removeItem(currentKey());
+    const u = AUTH.current();
+    if (u) localStorage.removeItem(`custorming.sync:${u.id}:${id}`);
+  }
+
+  // 지금 계정(또는 게스트)에서 마지막으로 연 앱
+  function loadStored() {
+    const list = appIndex();
+    const ids = [lsGet(currentKey(), null)].concat(list.map((a) => a.id));
+    for (const id of ids) {
+      const data = id && readApp(id);
+      if (data) return data;
     }
+    return null;
   }
 
   // 내보낸 앱의 가입 정보를 앱마다 따로 보관하기 위한 고유 id
@@ -96,7 +160,8 @@
   // 이 기기에만 저장 (클라우드에서 받아온 작업을 보관할 때)
   function persistLocal() {
     try {
-      localStorage.setItem(storageKey(), JSON.stringify(project));
+      writeApp(project);
+      lsSet(currentKey(), project.id);
       savedAt = Date.now();
     } catch (e) {
       toast('브라우저 저장 공간이 부족해요. "저장" 버튼으로 파일로 보관하세요.');
@@ -145,13 +210,15 @@
   // base: 마지막으로 받거나 올린 클라우드 버전, dirty: 아직 못 올린 변경이 있는지
   const sync = { state: 'idle', at: 0, error: '', timer: null, running: false, again: false };
 
-  const syncKey = () => `custorming.sync:${(AUTH.current() || {}).id}`;
-  function syncMeta() {
-    try { return JSON.parse(localStorage.getItem(syncKey()) || '{}'); } catch (e) { return {}; }
+  const syncKey = (id) => `custorming.sync:${(AUTH.current() || {}).id}:${id}`;
+  function syncMetaFor(id) {
+    return lsGet(syncKey(id), {});
   }
-  function setSyncMeta(patch) {
-    try { localStorage.setItem(syncKey(), JSON.stringify(Object.assign(syncMeta(), patch))); } catch (e) { /* 무시 */ }
+  function setSyncMetaFor(id, patch) {
+    try { lsSet(syncKey(id), Object.assign(syncMetaFor(id), patch)); } catch (e) { /* 무시 */ }
   }
+  const syncMeta = () => syncMetaFor(project.id);
+  const setSyncMeta = (patch) => setSyncMetaFor(project.id, patch);
   const cloudUser = () => { const u = AUTH.current(); return u && u.cloud ? u : null; };
 
   function setSync(state, error) {
@@ -206,7 +273,7 @@
   // 두 기기에서 동시에 고친 경우: 어느 쪽을 남길지 묻는다
   async function resolveConflict() {
     let remote;
-    try { remote = await CLOUD.load(); } catch (err) { setSync(err.offline ? 'offline' : 'error', err.message); return; }
+    try { remote = await CLOUD.load(project.id); } catch (err) { setSync(err.offline ? 'offline' : 'error', err.message); return; }
     if (!remote) { setSyncMeta({ base: null }); pushCloud(); return; }
     const takeRemote = confirm(
       '다른 기기에서 이 작업이 바뀌었어요.\n\n' +
@@ -222,7 +289,7 @@
     if (reason !== 'focus') setSync('loading');
     let remote;
     try {
-      remote = await CLOUD.load();
+      remote = await CLOUD.load(project.id);
     } catch (err) {
       setSync(err.offline ? 'offline' : 'error', err.message);
       if (err.signedOut) { toast(err.message); loadProject(loadStored() || TEMPLATES.tasks.build(), { sync: false }); }
@@ -231,6 +298,14 @@
     }
     const meta = syncMeta();
     if (!remote) {
+      if (meta.base && !meta.dirty && reason !== 'login') {
+        // 올린 적이 있는데 없어졌다 = 다른 기기에서 삭제함
+        if (confirm(`"${project.name || '앱'}"은(는) 다른 기기에서 삭제됐어요.\n\n[확인] 이 기기에서도 지우기\n[취소] 이 기기의 작업을 다시 올리기`)) {
+          forgetApp(project.id);
+          openAfterRemoval();
+          return;
+        }
+      }
       // 아직 클라우드에 없음: 지금 작업을 올린다
       setSyncMeta({ base: null });
       pushCloud();
@@ -287,6 +362,262 @@
   function updateHistoryButtons() {
     $('#undoBtn').disabled = !undoStack.length;
     $('#redoBtn').disabled = !redoStack.length;
+  }
+
+  // ---------------------------------------------------------------- 내 앱 (여러 개 관리)
+
+  // 한 앱을 클라우드에 올린다 (지금 열려 있지 않은 앱에도 쓴다)
+  async function uploadApp(p) {
+    const meta = syncMetaFor(p.id);
+    const updateTime = await CLOUD.save(p, meta.base || null);
+    setSyncMetaFor(p.id, { base: updateTime, dirty: false });
+  }
+
+  // 클라우드 목록과 이 기기 목록을 맞춘다
+  async function refreshCloudList() {
+    if (!cloudUser()) return false;
+    let remote;
+    try {
+      remote = await CLOUD.list();
+    } catch (err) {
+      if (err.signedOut) toast(err.message);
+      return false;
+    }
+    const remoteIds = new Set(remote.map((a) => a.id));
+    updateIndex((list) => {
+      remote.forEach((r) => {
+        const entry = list.find((a) => a.id === r.id);
+        const meta = syncMetaFor(r.id);
+        if (!entry) list.push({ id: r.id, name: r.name, updatedAt: r.savedAt, remote: true });
+        else if (!meta.dirty && meta.base !== r.updateTime) Object.assign(entry, { name: r.name, updatedAt: Math.max(entry.updatedAt || 0, r.savedAt) });
+      });
+    });
+    // 다른 기기에서 지운 앱은 이 기기에서도 지운다 (아직 못 올린 변경이 있으면 남긴다)
+    appIndex().forEach((a) => {
+      const meta = syncMetaFor(a.id);
+      if (!remoteIds.has(a.id) && meta.base && !meta.dirty && a.id !== project.id) forgetApp(a.id);
+    });
+    // 이 기기에서만 만든 앱은 올려서 다른 기기에서도 보이게 한다
+    for (const a of appIndex()) {
+      if (a.remote || remoteIds.has(a.id) || a.id === project.id) continue;
+      const data = readApp(a.id);
+      if (!data) continue;
+      try { await uploadApp(data); } catch (e) { break; }
+    }
+    renderAppsIfOpen();
+    return true;
+  }
+
+  // 지금 앱의 못 올린 변경을 먼저 올린다 (다른 앱으로 바꾸기 전에)
+  async function flushCurrent() {
+    clearTimeout(sync.timer);
+    if (cloudUser() && syncMeta().dirty) await pushCloud();
+  }
+
+  // 이 기기 또는 클라우드에서 앱 내용을 가져온다
+  async function appData(id) {
+    if (id === project.id) return project;
+    const local = readApp(id);
+    if (local) return local;
+    if (!cloudUser()) throw new Error('앱을 찾을 수 없어요');
+    const remote = await CLOUD.load(id);
+    if (!remote) throw new Error('다른 기기에서 삭제된 앱이에요');
+    writeApp(remote.project, remote.project.updatedAt);
+    setSyncMetaFor(id, { base: remote.updateTime, dirty: false });
+    return remote.project;
+  }
+
+  async function openApp(id) {
+    if (id === project.id) { closeApps(); return; }
+    await flushCurrent();
+    const local = readApp(id);
+    if (local) {
+      loadProject(local, { sync: false });
+      closeApps();
+      if (cloudUser()) pullCloud('open');
+      return;
+    }
+    if (!cloudUser()) { toast('앱을 찾을 수 없어요'); return; }
+    setSync('loading');
+    try {
+      const remote = await CLOUD.load(id);
+      if (!remote) {
+        forgetApp(id);
+        renderAppsIfOpen();
+        setSync('saved');
+        toast('다른 기기에서 삭제된 앱이에요');
+        ensureOpenProject();
+        return;
+      }
+      closeApps();
+      applyRemote(remote);
+    } catch (err) {
+      setSync(err.offline ? 'offline' : 'error', err.message);
+      toast(err.message);
+      ensureOpenProject();
+    }
+  }
+
+  // 여는 데 실패해서 열린 앱이 없으면 이 기기의 앱이나 새 앱을 연다
+  function ensureOpenProject() {
+    if (!isProject(project)) loadProject(loadStored() || TEMPLATES.tasks.build(), { sync: false });
+  }
+
+  function uniqueAppName(base) {
+    const names = new Set(appIndex().map((a) => a.name));
+    let name = base;
+    let i = 2;
+    while (names.has(name)) name = `${base} ${i++}`;
+    return name;
+  }
+
+  async function newApp(templateKey) {
+    await flushCurrent();
+    const p = TEMPLATES[templateKey].build();
+    p.name = uniqueAppName(p.name);
+    loadProject(p);
+    closeApps();
+    toast(`"${p.name}" 앱을 만들었어요`);
+  }
+
+  async function renameApp(id) {
+    const entry = appIndex().find((a) => a.id === id);
+    const current = id === project.id ? project.name : entry && entry.name;
+    const name = (prompt('앱 이름', current || '') || '').trim();
+    if (!name || name === current) return;
+    if (id === project.id) {
+      mutate(() => { project.name = name; });
+      renderAll();
+      renderAppsIfOpen();
+      return;
+    }
+    try {
+      const p = await appData(id);
+      p.name = name;
+      writeApp(p);
+      renderAppsIfOpen();
+      if (cloudUser()) await uploadApp(p);
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function duplicateApp(id) {
+    try {
+      const copy = clone(await appData(id));
+      copy.id = uid('p');
+      copy.name = uniqueAppName(`${copy.name || '앱'} 복사본`);
+      writeApp(copy);
+      renderAppsIfOpen();
+      toast(`"${copy.name}"을(를) 만들었어요`);
+      if (cloudUser()) await uploadApp(copy);
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function deleteApp(id) {
+    const entry = appIndex().find((a) => a.id === id);
+    const name = id === project.id ? project.name : entry && entry.name;
+    const where = cloudUser() ? '\n클라우드와 다른 기기에서도 사라져요.' : '';
+    if (!confirm(`"${name || '앱'}"을(를) 삭제할까요?${where}\n되돌릴 수 없어요.`)) return;
+    if (cloudUser()) {
+      try { await CLOUD.remove(id); } catch (err) { toast(err.message); return; }
+    }
+    const wasCurrent = id === project.id;
+    if (wasCurrent) clearTimeout(sync.timer);
+    forgetApp(id);
+    if (wasCurrent) openAfterRemoval();
+    renderAppsIfOpen();
+    toast(`"${name || '앱'}"을(를) 삭제했어요`);
+  }
+
+  // 지금 앱이 사라졌을 때: 다른 앱을 열고, 하나도 없으면 새로 만든다
+  function openAfterRemoval() {
+    const next = appIndex()[0];
+    if (next) {
+      project = { id: '__removed__' }; // openApp이 "이미 열려 있음"으로 착각하지 않게
+      openApp(next.id);
+      return;
+    }
+    const p = TEMPLATES.tasks.build();
+    loadProject(p);
+  }
+
+  function thumbnail(p) {
+    const s = RT.findScreen(p, p.startScreen) || p.screens[0];
+    const { w, h } = RT.sizeOf(p);
+    const scale = 150 / w;
+    const box = el('div', { class: 'thumb-stage', style: { width: '150px', height: Math.round(h * scale) + 'px' } });
+    const stage = el('div');
+    RT.styleStage(stage, p);
+    const ctx = RT.staticContext(p, s);
+    ctx.viewAs = 'guest';
+    stage.appendChild(RT.renderScreen(s, p, ctx));
+    Object.assign(stage.style, { position: 'absolute', left: '0', top: '0', transform: `scale(${scale})`, transformOrigin: '0 0' });
+    box.appendChild(stage);
+    return box;
+  }
+
+  function openApps() {
+    $('#appsModal').hidden = false;
+    $('#appsTemplates').hidden = true;
+    renderApps();
+    if (cloudUser()) {
+      $('#appsSync').hidden = false;
+      refreshCloudList().finally(() => { $('#appsSync').hidden = true; });
+    }
+  }
+
+  function closeApps() {
+    $('#appsModal').hidden = true;
+  }
+
+  function renderAppsIfOpen() {
+    if (!$('#appsModal').hidden) renderApps();
+  }
+
+  function renderApps() {
+    const u = AUTH.current();
+    $('#appsWho').textContent = !u
+      ? '게스트의 앱이에요. 이 브라우저에 저장되고, 로그인하면 계정에 따로 보관돼요.'
+      : u.cloud ? `${u.name}님의 앱 · 클라우드에 동기화돼서 다른 기기에서도 보여요.` : `${u.name}님의 앱 · 이 브라우저에 저장돼요.`;
+    const grid = $('#appsGrid');
+    grid.innerHTML = '';
+    grid.appendChild(el('button', {
+      class: 'app-card new',
+      onclick: () => { $('#appsTemplates').hidden = !$('#appsTemplates').hidden; },
+    }, svgIcon('plus', 28), el('b', { text: '새 앱 만들기' }), el('small', { text: '템플릿에서 시작' })));
+    const action = (label, iconName, fn, danger) => el('button', {
+      class: 'icon-btn' + (danger ? ' danger' : ''), title: label,
+      onclick: (e) => { e.stopPropagation(); fn(); },
+    }, svgIcon(iconName, 16));
+    appIndex().forEach((a) => {
+      const isCurrent = a.id === project.id;
+      const data = isCurrent ? project : readApp(a.id);
+      const thumb = el('div', { class: 'app-thumb' },
+        data ? thumbnail(data) : el('div', { class: 'thumb-cloud' }, svgIcon('cloud', 30), el('span', { text: '클라우드에 있어요' })));
+      grid.appendChild(el('div', {
+        class: 'app-card' + (isCurrent ? ' current' : ''), title: isCurrent ? '지금 편집 중인 앱' : '눌러서 열기',
+        onclick: () => openApp(a.id),
+      },
+      thumb,
+      el('div', { class: 'app-meta' },
+        el('b', { text: isCurrent ? (project.name || '이름 없는 앱') : a.name }),
+        el('small', { text: isCurrent ? '지금 편집 중' : `${ago(a.updatedAt || Date.now())} 수정` })),
+      el('div', { class: 'app-actions' },
+        action('이름 바꾸기', 'edit', () => renameApp(a.id)),
+        action('복제', 'copy', () => duplicateApp(a.id)),
+        action('삭제', 'trash', () => deleteApp(a.id), true))));
+    });
+  }
+
+  function setupApps() {
+    $('#appsBtn').addEventListener('click', openApps);
+    $('#appsClose').addEventListener('click', closeApps);
+    $('#appsModal').addEventListener('pointerdown', (e) => { if (e.target === $('#appsModal')) closeApps(); });
+    const tpl = $('#appsTemplates');
+    Object.entries(TEMPLATES).forEach(([k, t]) => tpl.appendChild(el('button', { onclick: () => newApp(k) }, svgIcon('template', 16), t.label)));
   }
 
   function loadProject(data, opts) {
@@ -454,6 +785,8 @@
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
     folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>',
     template: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+    apps: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
     help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
@@ -1174,6 +1507,10 @@
         if (e.key === 'Escape') closeCloudSettings();
         return;
       }
+      if (!$('#appsModal').hidden) {
+        if (e.key === 'Escape') closeApps();
+        return;
+      }
       if (!$('#welcome').hidden) {
         if (e.key === 'Escape' || e.key === 'Enter') closeWelcome();
         return;
@@ -1308,6 +1645,10 @@
         data = JSON.parse(text);
       }
       if (!isProject(data)) throw new Error('올바른 프로젝트 파일이 아니에요');
+      // 지금 작업을 지우지 않고 새 앱으로 추가한다
+      await flushCurrent();
+      if (!data.id || appIndex().some((a) => a.id === data.id)) data.id = uid('p');
+      data.name = uniqueAppName(data.name || '가져온 앱');
       loadProject(data);
       toast(`"${data.name || '앱'}"을(를) 불러왔어요`);
     } catch (err) {
@@ -1317,16 +1658,18 @@
 
   // ---------------------------------------------------------------- 상단 바
 
+  // 템플릿은 지금 작업을 지우지 않고 새 앱으로 만든다
   function startFromTemplate(k) {
-    if (!confirm(`"${TEMPLATES[k].label}" 템플릿으로 새로 시작할까요?\n지금 작업은 사라져요. (먼저 "저장"을 누르면 보관할 수 있어요)`)) return;
-    loadProject(TEMPLATES[k].build());
+    newApp(k);
   }
 
   function setupMenu() {
     const menu = $('#moreMenu');
     const item = (iconName, label, fn) => el('button', { onclick: () => { menu.hidden = true; fn(); } }, svgIcon(iconName, 16), label);
     menu.append(
-      el('div', { class: 'menu-label', text: '템플릿으로 새로 시작' }),
+      item('apps', '내 앱 목록', openApps),
+      el('hr'),
+      el('div', { class: 'menu-label', text: '새 앱 만들기' }),
       ...Object.entries(TEMPLATES).map(([k, t]) => item('template', t.label, () => startFromTemplate(k))),
       el('hr'),
       item('folder', '파일 열기 (JSON · 내보낸 HTML)', () => $('#fileInput').click()),
@@ -1486,11 +1829,20 @@
         const user = await AUTH.logIn({ email, password });
         const saved = loadStored();
         if (user.cloud) {
-          // 이 기기에 남은 사본이 있으면 먼저 보여주고, 클라우드와 맞춘다
-          if (saved) loadProject(saved, { sync: false });
           closeAuth();
           toast(`${user.name}님, 로그인했어요`);
-          await pullCloud('login');
+          const guestWork = project;
+          setSync('loading');
+          await refreshCloudList();
+          const apps = appIndex();
+          if (!apps.length) {
+            // 계정이 비어 있으면 지금 작업을 계정의 첫 앱으로 가져간다
+            loadProject(guestWork);
+          } else {
+            project = { id: '__guest__' };
+            await openApp((saved && saved.id) || apps[0].id);
+            if (!sync.running && sync.state === 'loading') setSync('saved');
+          }
           return;
         }
         if (saved) {
@@ -1564,7 +1916,7 @@
       if (cloudUser() && (sync.state === 'error' || sync.state === 'offline')) pushCloud();
     });
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') pullCloud('focus');
+      if (document.visibilityState === 'visible') pullCloud('focus').then(() => { if (!$('#appsModal').hidden) refreshCloudList(); });
     });
     window.addEventListener('online', () => { if (syncMeta().dirty) pushCloud(); else pullCloud('focus'); });
     window.addEventListener('beforeunload', (e) => {
@@ -1635,12 +1987,18 @@
   renderAll();
   updateSaveStatus();
   setupCloudSettings();
-  if (cloudUser()) pullCloud('start');
+  // 처음 켰을 때 지금 앱이 목록에 들어가 있게 한다
+  if (!readApp(project.id)) {
+    try { writeApp(project); lsSet(currentKey(), project.id); } catch (e) { /* 공간 부족 */ }
+  }
+  setupApps();
+  if (cloudUser()) pullCloud('start').then(() => refreshCloudList());
   setInterval(updateSaveStatus, 30000);
 
   // 테스트와 콘솔에서 쓰기 위한 창구
   window.custorming = {
     get project() { return project; },
+    apps: () => appIndex(),
     openAuth,
     buildAppHtml,
     loadProject,
