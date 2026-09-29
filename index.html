@@ -141,16 +141,51 @@
         <label class="field" data-only="signup"><span class="field-label">비밀번호 확인</span><input id="authPassword2" type="password" autocomplete="new-password" placeholder="한 번 더 입력"></label>
         <div id="authError" class="auth-error" role="alert" hidden></div>
         <button id="authSubmit" type="submit" class="primary big">로그인</button>
+        <button id="authForgot" type="button" class="later-btn forgot" hidden>비밀번호를 잊으셨나요?</button>
       </form>
       <button id="authLater" type="button" class="later-btn">나중에 할게요 — 게스트로 계속하기</button>
-      <p class="auth-fineprint">계정은 이 브라우저에만 저장돼요. 다른 기기와는 아직 공유되지 않아요.</p>
+      <p id="authFineprint" class="auth-fineprint"></p>
     </div>
   </div>
 
+  <div id="cloudModal" class="welcome-backdrop" hidden>
+    <div class="welcome cloud" role="dialog" aria-labelledby="cloudTitle">
+      <button id="cloudClose" class="welcome-close" title="닫기" data-icon="x"></button>
+      <div class="welcome-icon" data-icon="cloud"></div>
+      <h2 id="cloudTitle">클라우드 동기화</h2>
+      <p class="welcome-sub">Firebase에 연결하면 로그인한 기기 어디서든 작업을 이어서 할 수 있어요.</p>
+      <div id="cloudFileNote" class="fb-status ok" hidden>js/config.js에 설정이 들어 있어서 모든 기기에서 자동으로 켜져 있어요.</div>
+      <div class="auth-form">
+        <label class="field"><span class="field-label">웹 API 키</span><input id="cloudApiKey" type="text" placeholder="AIzaSy…" spellcheck="false" autocomplete="off"></label>
+        <label class="field"><span class="field-label">프로젝트 ID</span><input id="cloudProjectId" type="text" placeholder="my-app-12345" spellcheck="false" autocomplete="off"></label>
+        <div id="cloudStatus" class="fb-status" hidden></div>
+        <div class="btn-row">
+          <button id="cloudCheck" type="button">연결 확인</button>
+          <button id="cloudOff" type="button">동기화 끄기</button>
+        </div>
+        <button id="cloudSave" type="button" class="primary big">저장하고 켜기</button>
+      </div>
+      <details class="note fb-guide cloud-guide">
+        <summary>Firebase 준비하기 (처음 한 번, 10분)</summary>
+        <ol>
+          <li><a href="https://console.firebase.google.com/" target="_blank" rel="noopener">Firebase 콘솔</a>에서 프로젝트를 만들어요 (무료 Spark 요금제로 충분해요).</li>
+          <li>빌드 → Authentication → 시작하기 → 로그인 방법에서 "이메일/비밀번호"를 켜요.</li>
+          <li>빌드 → Firestore Database → 데이터베이스 만들기 (위치는 asia-northeast3 서울 추천, 프로덕션 모드).</li>
+          <li>Firestore의 "규칙" 탭에 아래 규칙을 붙여넣고 게시해요. 로그인한 본인 작업만 읽고 쓸 수 있게 막아줘요.</li>
+          <li>톱니바퀴 → 프로젝트 설정 → 일반에서 "웹 API 키"와 "프로젝트 ID"를 복사해 위에 넣어요.</li>
+        </ol>
+        <div class="rules-box"><pre id="cloudRules"></pre><button id="copyRules" type="button" class="mini-copy">복사</button></div>
+        <p class="auth-fineprint">여러 기기에서 설정 없이 쓰려면 js/config.js 파일에 같은 값을 적어 두세요.</p>
+      </details>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
   <script src="js/runtime.js"></script>
   <script src="js/components.js"></script>
   <script src="js/templates.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/cloud.js"></script>
   <script src="js/editor.js"></script>
 </body>
 </html>

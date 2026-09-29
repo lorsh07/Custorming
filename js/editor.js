@@ -6,6 +6,7 @@
   const DEFS = window.CM_COMPONENTS;
   const TEMPLATES = window.CM_TEMPLATES;
   const AUTH = window.CustormingAuth;
+  const CLOUD = window.CustormingCloud;
   const uid = window.cmUid;
   const STORAGE_KEY = 'custorming.project.v1';
   const GRID = 8;
@@ -66,7 +67,7 @@
   // 게스트 작업과 계정별 작업을 따로 보관한다
   function storageKey() {
     const user = AUTH.current();
-    return user ? `${STORAGE_KEY}:${user.email}` : STORAGE_KEY;
+    return user ? `${STORAGE_KEY}:${user.id || user.email}` : STORAGE_KEY;
   }
 
   function loadStored() {
@@ -92,7 +93,8 @@
 
   let savedAt = null;
 
-  function persist() {
+  // 이 기기에만 저장 (클라우드에서 받아온 작업을 보관할 때)
+  function persistLocal() {
     try {
       localStorage.setItem(storageKey(), JSON.stringify(project));
       savedAt = Date.now();
@@ -102,12 +104,148 @@
     updateSaveStatus();
   }
 
+  // 작업이 바뀔 때마다: 이 기기에 저장하고, 클라우드에 로그인했으면 잠시 뒤 올린다
+  function persist() {
+    persistLocal();
+    scheduleCloudSave();
+  }
+
+  function ago(t) {
+    const min = Math.floor((Date.now() - t) / 60000);
+    return min < 1 ? '방금 전' : min < 60 ? `${min}분 전` : `${Math.floor(min / 60)}시간 전`;
+  }
+
   function updateSaveStatus() {
     const pill = $('#saveStatus');
     if (!pill) return;
+    pill.className = 'status-pill';
+    pill.title = '';
+    const user = AUTH.current();
+    if (user && user.cloud) {
+      const text = {
+        saving: '클라우드에 저장 중…',
+        pending: '클라우드에 저장 대기 중',
+        saved: '클라우드에 저장됨 · ' + ago(sync.at || Date.now()),
+        offline: '오프라인 · 이 기기에만 저장됨',
+        error: '클라우드 저장 실패 · 눌러서 다시 시도',
+        loading: '클라우드에서 불러오는 중…',
+      }[sync.state] || '클라우드 동기화';
+      pill.textContent = text;
+      if (sync.state === 'offline' || sync.state === 'error') pill.classList.add('warn');
+      if (sync.state === 'saved') pill.classList.add('ok');
+      pill.title = sync.error || '다른 기기에서 로그인하면 이어서 작업할 수 있어요';
+      return;
+    }
     if (!savedAt) { pill.textContent = '초안'; return; }
-    const min = Math.floor((Date.now() - savedAt) / 60000);
-    pill.textContent = '자동 저장됨 · ' + (min < 1 ? '방금 전' : min < 60 ? `${min}분 전` : `${Math.floor(min / 60)}시간 전`);
+    pill.textContent = '자동 저장됨 · ' + ago(savedAt);
+  }
+
+  // ---------------------------------------------------------------- 클라우드 동기화
+
+  // base: 마지막으로 받거나 올린 클라우드 버전, dirty: 아직 못 올린 변경이 있는지
+  const sync = { state: 'idle', at: 0, error: '', timer: null, running: false, again: false };
+
+  const syncKey = () => `custorming.sync:${(AUTH.current() || {}).id}`;
+  function syncMeta() {
+    try { return JSON.parse(localStorage.getItem(syncKey()) || '{}'); } catch (e) { return {}; }
+  }
+  function setSyncMeta(patch) {
+    try { localStorage.setItem(syncKey(), JSON.stringify(Object.assign(syncMeta(), patch))); } catch (e) { /* 무시 */ }
+  }
+  const cloudUser = () => { const u = AUTH.current(); return u && u.cloud ? u : null; };
+
+  function setSync(state, error) {
+    sync.state = state;
+    sync.error = error || '';
+    if (state === 'saved') sync.at = Date.now();
+    updateSaveStatus();
+  }
+
+  function scheduleCloudSave() {
+    if (!cloudUser()) return;
+    setSyncMeta({ dirty: true });
+    clearTimeout(sync.timer);
+    setSync('pending');
+    sync.timer = setTimeout(() => pushCloud(), 1200);
+  }
+
+  async function pushCloud(force) {
+    if (!cloudUser()) return;
+    clearTimeout(sync.timer);
+    if (sync.running) { sync.again = true; return; }
+    sync.running = true;
+    setSync('saving');
+    try {
+      const meta = syncMeta();
+      const base = force ? undefined : (meta.base || null);
+      const updateTime = await CLOUD.save(project, base);
+      setSyncMeta({ base: updateTime, dirty: false });
+      setSync('saved');
+    } catch (err) {
+      if (err.conflict) {
+        sync.running = false;
+        await resolveConflict();
+        return;
+      }
+      setSync(err.offline ? 'offline' : 'error', err.message);
+      if (!err.offline) toast(err.message);
+    } finally {
+      sync.running = false;
+    }
+    if (sync.again) { sync.again = false; pushCloud(); }
+  }
+
+  // 클라우드에서 받은 작업으로 바꾼다 (실행 취소 기록은 비운다)
+  function applyRemote(remote, message) {
+    loadProject(remote.project, { sync: false });
+    setSyncMeta({ base: remote.updateTime, dirty: false });
+    setSync('saved');
+    if (message) toast(message);
+  }
+
+  // 두 기기에서 동시에 고친 경우: 어느 쪽을 남길지 묻는다
+  async function resolveConflict() {
+    let remote;
+    try { remote = await CLOUD.load(); } catch (err) { setSync(err.offline ? 'offline' : 'error', err.message); return; }
+    if (!remote) { setSyncMeta({ base: null }); pushCloud(); return; }
+    const takeRemote = confirm(
+      '다른 기기에서 이 작업이 바뀌었어요.\n\n' +
+      `[확인] 다른 기기에서 저장한 작업 불러오기 ("${remote.project.name || '앱'}")\n` +
+      '[취소] 이 기기의 작업으로 클라우드를 덮어쓰기');
+    if (takeRemote) applyRemote(remote, '다른 기기에서 저장한 작업을 불러왔어요');
+    else pushCloud(true);
+  }
+
+  // 켤 때 · 로그인할 때 · 창으로 돌아올 때 다른 기기에서 바뀐 내용이 있는지 확인한다
+  async function pullCloud(reason) {
+    if (!cloudUser() || sync.running) return;
+    if (reason !== 'focus') setSync('loading');
+    let remote;
+    try {
+      remote = await CLOUD.load();
+    } catch (err) {
+      setSync(err.offline ? 'offline' : 'error', err.message);
+      if (err.signedOut) { toast(err.message); loadProject(loadStored() || TEMPLATES.tasks.build(), { sync: false }); }
+      else if (!err.offline && reason !== 'focus') toast(err.message);
+      return;
+    }
+    const meta = syncMeta();
+    if (!remote) {
+      // 아직 클라우드에 없음: 지금 작업을 올린다
+      setSyncMeta({ base: null });
+      pushCloud();
+      return;
+    }
+    if (remote.updateTime === meta.base) {
+      if (meta.dirty) pushCloud();
+      else setSync('saved');
+      return;
+    }
+    if (meta.dirty && meta.base) {
+      await resolveConflict();
+      return;
+    }
+    applyRemote(remote, reason === 'login' ? '클라우드에 저장된 작업을 열었어요' : '다른 기기에서 작업한 내용을 불러왔어요');
   }
 
   const size = () => RT.sizeOf(project);
@@ -151,13 +289,14 @@
     $('#redoBtn').disabled = !redoStack.length;
   }
 
-  function loadProject(data) {
+  function loadProject(data, opts) {
     undoStack.length = 0;
     redoStack = [];
     project = ensureId(data);
     screenId = project.startScreen || project.screens[0].id;
     selectedId = null;
-    persist();
+    if (opts && opts.sync === false) persistLocal();
+    else persist();
     renderAll();
   }
 
@@ -315,6 +454,7 @@
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
     folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>',
     template: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+    cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
     help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
     alignLeft: '<path d="M3 6h18M3 12h12M3 18h16"/>',
@@ -367,7 +507,7 @@
   function hydrateIcons() {
     document.querySelectorAll('[data-icon]').forEach((node) => {
       const name = node.dataset.icon;
-      const sizeByName = { puzzle: 20, rocket: 34, user: 34, x: 20 };
+      const sizeByName = { puzzle: 20, rocket: 34, user: 34, cloud: 34, x: 20 };
       node.prepend(svgIcon(name, sizeByName[name] || 18));
     });
   }
@@ -1030,6 +1170,10 @@
         if (e.key === 'Escape') closeAuth();
         return;
       }
+      if (!$('#cloudModal').hidden) {
+        if (e.key === 'Escape') closeCloudSettings();
+        return;
+      }
       if (!$('#welcome').hidden) {
         if (e.key === 'Escape' || e.key === 'Enter') closeWelcome();
         return;
@@ -1188,6 +1332,8 @@
       item('folder', '파일 열기 (JSON · 내보낸 HTML)', () => $('#fileInput').click()),
       item('download', '앱 내보내기 (HTML 파일)', exportHtml),
       el('hr'),
+      item('cloud', '클라우드 동기화 설정', openCloudSettings),
+      el('hr'),
       item('help', '시작 안내 다시 보기', openWelcome));
     $('#moreBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
     document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.menu-wrap')) menu.hidden = true; });
@@ -1216,11 +1362,87 @@
     if (!seen) openWelcome();
   }
 
+  // ---------------------------------------------------------------- 클라우드 동기화 설정
+
+  function openCloudSettings() {
+    const conf = AUTH.cloudConfig();
+    const fromFile = !!conf && conf.source === 'file';
+    $('#cloudApiKey').value = conf ? conf.apiKey : '';
+    $('#cloudProjectId').value = conf ? conf.projectId : '';
+    $('#cloudApiKey').disabled = fromFile;
+    $('#cloudProjectId').disabled = fromFile;
+    $('#cloudSave').hidden = fromFile;
+    $('#cloudOff').hidden = fromFile || !conf;
+    $('#cloudFileNote').hidden = !fromFile;
+    $('#cloudStatus').hidden = true;
+    $('#cloudModal').hidden = false;
+  }
+
+  function closeCloudSettings() {
+    $('#cloudModal').hidden = true;
+  }
+
+  function cloudStatus(ok, message) {
+    const box = $('#cloudStatus');
+    box.hidden = false;
+    box.className = 'fb-status' + (ok === true ? ' ok' : ok === false ? ' bad' : '');
+    box.textContent = message;
+  }
+
+  async function checkCloud() {
+    const apiKey = $('#cloudApiKey').value.trim();
+    const projectId = $('#cloudProjectId').value.trim();
+    cloudStatus(null, '확인하는 중…');
+    const auth = await RT.checkFirebase(apiKey);
+    if (!auth.ok) { cloudStatus(false, '로그인(Authentication): ' + auth.message); return false; }
+    const store = await CLOUD.checkFirestore(projectId);
+    if (!store.ok) { cloudStatus(false, '저장소(Firestore): ' + store.message); return false; }
+    cloudStatus(true, '모두 준비됐어요! 로그인과 Firestore 저장을 쓸 수 있어요');
+    return true;
+  }
+
+  // 설정을 바꾸면 계정 종류가 달라지므로 로그아웃하고 게스트 작업으로 돌아간다
+  function applyCloudConfig(conf) {
+    AUTH.setCloudConfig(conf);
+    setSync('idle');
+    loadProject(loadStored() || TEMPLATES.tasks.build(), { sync: false });
+  }
+
+  function setupCloudSettings() {
+    $('#cloudRules').textContent = CLOUD.RULES;
+    $('#copyRules').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(CLOUD.RULES); toast('규칙을 복사했어요'); } catch (e) { toast('복사하지 못했어요. 직접 선택해서 복사해 주세요'); }
+    });
+    $('#cloudClose').addEventListener('click', closeCloudSettings);
+    $('#cloudModal').addEventListener('pointerdown', (e) => { if (e.target === $('#cloudModal')) closeCloudSettings(); });
+    $('#cloudCheck').addEventListener('click', checkCloud);
+    $('#cloudSave').addEventListener('click', async () => {
+      const apiKey = $('#cloudApiKey').value.trim();
+      const projectId = $('#cloudProjectId').value.trim();
+      if (!apiKey || !projectId) { cloudStatus(false, '웹 API 키와 프로젝트 ID를 모두 넣어 주세요'); return; }
+      if (!(await checkCloud()) && !confirm('연결 확인이 통과되지 않았어요. 그래도 저장할까요?')) return;
+      applyCloudConfig({ apiKey, projectId });
+      closeCloudSettings();
+      toast('클라우드 동기화를 켰어요. 로그인하면 여러 기기에서 이어서 작업할 수 있어요');
+      openAuth('login');
+    });
+    $('#cloudOff').addEventListener('click', () => {
+      if (!confirm('클라우드 동기화를 끌까요? 클라우드에 저장된 작업은 그대로 남아 있어요.')) return;
+      applyCloudConfig(null);
+      closeCloudSettings();
+      toast('클라우드 동기화를 껐어요');
+    });
+  }
+
   // ---------------------------------------------------------------- 계정 (선택 사항)
 
   let authMode = 'login';
 
   function openAuth(mode) {
+    const cloud = AUTH.isCloud();
+    $('#authFineprint').textContent = cloud
+      ? '계정과 작업이 클라우드(Firebase)에 저장돼서 다른 기기에서 로그인해도 이어서 작업할 수 있어요.'
+      : '계정은 이 브라우저에만 저장돼요. 여러 기기에서 쓰려면 더보기 → 클라우드 동기화 설정을 켜 주세요.';
     setAuthMode(mode || 'login');
     $('#authForm').reset();
     $('#authError').hidden = true;
@@ -1241,6 +1463,7 @@
     $('#authSub').textContent = signup ? '가입하면 지금 만들던 앱이 새 계정에 그대로 저장돼요.' : '로그인하면 작업이 내 계정에 따로 저장돼요.';
     $('#authSubmit').textContent = signup ? '가입하고 계속하기' : '로그인';
     $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
+    $('#authForgot').hidden = signup || !AUTH.isCloud();
     $('#authError').hidden = true;
   }
 
@@ -1258,10 +1481,18 @@
         // 가입 직후에도 지금 작업을 그대로 이어서 새 계정에 저장한다
         const user = await AUTH.signUp({ name: $('#authName').value, email, password });
         persist();
-        toast(`환영해요, ${user.name}님! 지금 작업이 계정에 저장됐어요`);
+        toast(user.cloud ? `환영해요, ${user.name}님! 지금 작업이 클라우드에 저장돼요` : `환영해요, ${user.name}님! 지금 작업이 계정에 저장됐어요`);
       } else {
         const user = await AUTH.logIn({ email, password });
         const saved = loadStored();
+        if (user.cloud) {
+          // 이 기기에 남은 사본이 있으면 먼저 보여주고, 클라우드와 맞춘다
+          if (saved) loadProject(saved, { sync: false });
+          closeAuth();
+          toast(`${user.name}님, 로그인했어요`);
+          await pullCloud('login');
+          return;
+        }
         if (saved) {
           loadProject(saved);
           toast(`${user.name}님, 다시 오셨네요! 계정에 저장된 작업을 열었어요`);
@@ -1279,10 +1510,13 @@
     }
   }
 
-  function logOut() {
+  async function logOut() {
     $('#accountMenu').hidden = true;
+    // 아직 못 올린 변경이 있으면 먼저 올려 본다 (실패해도 이 기기에는 남아 있다)
+    if (cloudUser() && syncMeta().dirty) await pushCloud();
     AUTH.logOut();
-    loadProject(loadStored() || TEMPLATES.tasks.build());
+    setSync('idle');
+    loadProject(loadStored() || TEMPLATES.tasks.build(), { sync: false });
     toast('로그아웃했어요. 게스트로 계속 쓸 수 있어요');
   }
 
@@ -1297,6 +1531,9 @@
     $('#accountAvatar').textContent = initial;
     $('#accountName').textContent = user.name;
     $('#accountEmail').textContent = user.email;
+    document.querySelector('.account-note').textContent = user.cloud
+      ? '작업이 클라우드에 동기화돼요. 다른 기기에서 로그인해도 이어서 할 수 있어요.'
+      : '작업이 이 브라우저의 계정에 저장돼요.';
   }
 
   function setupAccount() {
@@ -1308,9 +1545,35 @@
     $('#authForm').addEventListener('submit', submitAuth);
     $('#authClose').addEventListener('click', closeAuth);
     $('#authLater').addEventListener('click', closeAuth);
+    $('#authForgot').addEventListener('click', async () => {
+      const error = $('#authError');
+      error.hidden = true;
+      try {
+        await AUTH.resetPassword($('#authEmail').value);
+        toast('비밀번호 재설정 메일을 보냈어요. 메일함을 확인해 주세요');
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+      }
+    });
     $('#authModal').addEventListener('pointerdown', (e) => { if (e.target === $('#authModal')) closeAuth(); });
-    AUTH.onChange(renderAccount);
+    AUTH.onChange(() => { renderAccount(); updateSaveStatus(); });
     renderAccount();
+
+    $('#saveStatus').addEventListener('click', () => {
+      if (cloudUser() && (sync.state === 'error' || sync.state === 'offline')) pushCloud();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') pullCloud('focus');
+    });
+    window.addEventListener('online', () => { if (syncMeta().dirty) pushCloud(); else pullCloud('focus'); });
+    window.addEventListener('beforeunload', (e) => {
+      if (cloudUser() && (sync.state === 'pending' || sync.state === 'saving')) {
+        pushCloud();
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
   }
 
   function setupTopbar() {
@@ -1371,6 +1634,8 @@
   setupAccount();
   renderAll();
   updateSaveStatus();
+  setupCloudSettings();
+  if (cloudUser()) pullCloud('start');
   setInterval(updateSaveStatus, 30000);
 
   // 테스트와 콘솔에서 쓰기 위한 창구

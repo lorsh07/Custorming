@@ -1044,6 +1044,6 @@ function createCustormingRuntime() {
   return {
     DEFAULT_SIZE, DEFAULT_THEME, FONTS, ICONS, icon,
     injectCSS, styleStage, renderScreen, renderComponent, staticContext, mount, boot,
-    themeOf, sizeOf, findScreen, parseMessages, sha256, loginScreenOf, checkFirebase,
+    themeOf, sizeOf, findScreen, parseMessages, sha256, loginScreenOf, checkFirebase, firebaseClient,
   };
 }

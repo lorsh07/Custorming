@@ -54,7 +54,7 @@ Firebase 연결 방법 (무료):
 Firebase SDK 없이 [Auth REST API](https://firebase.google.com/docs/reference/rest/auth)를 직접 호출하므로 내보낸 HTML 파일 하나로 동작합니다.
 웹 API 키는 앱에 포함돼도 되는 공개용 키지만, 필요하면 Google Cloud 콘솔에서 키 사용처를 제한할 수 있습니다.
 
-### 로그인 / 회원가입 (선택)
+### 로그인 / 회원가입 · 여러 기기에서 이어서 작업하기 (선택)
 
 로그인하지 않아도 게스트로 모든 기능을 쓸 수 있습니다. 원할 때 오른쪽 위 `로그인` 버튼으로 회원가입하거나 로그인하세요.
 
@@ -62,8 +62,38 @@ Firebase SDK 없이 [Auth REST API](https://firebase.google.com/docs/reference/r
 - **로그인**: 계정에 저장된 작업이 열립니다(저장된 작업이 없으면 지금 작업을 계정에 저장).
 - **로그아웃**: 오른쪽 위 프로필 동그라미 → 로그아웃. 게스트 작업으로 돌아갑니다.
 
-계정은 지금은 서버 없이 **이 브라우저에만** 저장됩니다(비밀번호는 PBKDF2로 해시해서 보관).
-다른 기기와 공유하려면 서버가 필요하며, `js/auth.js`의 `signUp / logIn / logOut / current` 함수만 서버(Firebase, Supabase 등) 호출로 바꾸면 됩니다.
+기본으로는 계정이 **이 브라우저에만** 저장됩니다. **클라우드 동기화**를 켜면 Firebase 계정으로 로그인하고,
+작업이 Firestore에 저장되어 다른 기기에서 같은 계정으로 로그인하면 그대로 이어서 작업할 수 있습니다.
+
+#### 클라우드 동기화 켜기
+
+1. [Firebase 콘솔](https://console.firebase.google.com/)에서 프로젝트를 만듭니다 (무료 Spark 요금제로 충분).
+2. **Authentication → 시작하기 → 로그인 방법**에서 "이메일/비밀번호"를 켭니다.
+3. **Firestore Database → 데이터베이스 만들기** (프로덕션 모드, 위치는 `asia-northeast3` 서울 추천).
+4. Firestore **규칙** 탭에 아래 규칙을 붙여넣고 게시합니다. 로그인한 본인의 작업만 읽고 쓸 수 있습니다.
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /users/{uid}/{document=**} {
+         allow read, write: if request.auth != null && request.auth.uid == uid;
+       }
+     }
+   }
+   ```
+
+5. 프로젝트 설정 → 일반에서 **웹 API 키**와 **프로젝트 ID**를 복사해 넣습니다. 두 가지 방법이 있습니다.
+   - **모든 기기에 한 번에**: `js/config.js`의 `apiKey`, `projectId`에 적어 둡니다. (이 에디터를 웹에 올려서 쓸 때 추천)
+   - **기기마다**: 에디터의 `더보기 → 클라우드 동기화 설정`에 넣고 `연결 확인` → `저장하고 켜기`.
+
+동기화 방식:
+
+- 작업은 바뀔 때마다 이 기기에 먼저 저장되고, 1초쯤 뒤 클라우드에 올라갑니다. 상단 표시가 "클라우드에 저장됨"으로 바뀝니다.
+- 에디터를 켜거나 창으로 돌아오면, 다른 기기에서 바뀐 내용을 자동으로 불러옵니다.
+- 인터넷이 끊기면 "오프라인 · 이 기기에만 저장됨"으로 표시하고, 다시 연결되면 올립니다.
+- 두 기기에서 동시에 고쳐서 버전이 엇갈리면, 어느 쪽 작업을 남길지 물어봅니다 (몰래 덮어쓰지 않음).
+- 작업은 `users/{uid}/projects/current` 문서 하나에 저장됩니다. 문서 크기 한도(1MB) 때문에 큰 이미지를 많이 올리면 저장이 거부될 수 있습니다.
 
 ### 단축키
 
@@ -101,7 +131,9 @@ js/runtime.js       프로젝트(JSON)를 실제 화면으로 그리고 동작�
                     (에디터 캔버스, 미리보기, 내보낸 앱이 모두 공유)
 js/components.js    오브젝트 종류별 기본값과 속성 패널 항목
 js/templates.js     시작 템플릿 (할 일 앱, 빈 앱, 메신저 앱, 로그인 + 홈)
-js/auth.js          선택형 계정 (회원가입·로그인·로그아웃)
+js/config.js        클라우드 동기화용 Firebase 설정 (선택)
+js/auth.js          선택형 계정 (이 브라우저 또는 Firebase Authentication)
+js/cloud.js         Firestore에 작업 저장·불러오기 (REST API)
 js/editor.js        배치·선택·크기 조절·실행 취소·저장/내보내기
 ```
 
