@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Custorming — 앱 빌더</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" data-icon="puzzle"></span>
+      <span class="brand-name">Custorming</span>
+    </div>
+    <button id="appsBtn" class="ghost apps-btn" title="내 앱 목록: 여러 앱을 만들고 골라서 열기"><span data-icon="apps"></span>내 앱</button>
+    <input id="appName" class="app-name" title="앱 이름" spellcheck="false">
+    <span id="saveStatus" class="status-pill">자동 저장됨</span>
+    <div class="spacer"></div>
+    <div class="tool-group">
+      <button id="undoBtn" class="icon-btn" title="실행 취소 (Ctrl+Z)" data-icon="undo"></button>
+      <button id="redoBtn" class="icon-btn" title="다시 실행 (Ctrl+Shift+Z)" data-icon="redo"></button>
+    </div>
+    <select id="deviceSelect" class="device-select" title="화면 크기"></select>
+    <div class="menu-wrap">
+      <button id="moreBtn" class="ghost" title="템플릿, 열기, 내보내기"><span data-icon="more"></span>더보기</button>
+      <div id="moreMenu" class="menu" hidden></div>
+    </div>
+    <button id="previewBtn" class="ghost"><span data-icon="eye"></span>미리보기</button>
+    <button id="saveBtn" class="primary" title="프로젝트를 파일로 저장 (Ctrl+S)"><span data-icon="save"></span>저장</button>
+    <div class="menu-wrap" id="accountWrap">
+      <button id="loginBtn" class="login-btn" title="로그인하면 작업이 내 계정에 저장돼요">로그인</button>
+      <button id="avatarBtn" class="avatar-btn" hidden></button>
+      <div id="accountMenu" class="menu account-menu" hidden>
+        <div class="account-card">
+          <span id="accountAvatar" class="avatar-btn static"></span>
+          <div><b id="accountName"></b><small id="accountEmail"></small></div>
+        </div>
+        <div class="account-note">작업이 이 계정에 자동 저장돼요.</div>
+        <hr>
+        <button id="logoutBtn"><span data-icon="logout"></span>로그아웃</button>
+      </div>
+    </div>
+    <input id="fileInput" type="file" accept=".json,.html,application/json,text/html" hidden>
+  </header>
+
+  <main class="workspace">
+    <aside class="panel left">
+      <section>
+        <div class="panel-head">
+          <h2>오브젝트</h2>
+          <p>블록을 휴대폰 화면으로 끌어다 놓으세요</p>
+        </div>
+        <div id="palette" class="palette"></div>
+      </section>
+      <section>
+        <div class="section-head">
+          <h3>화면</h3>
+          <button id="addScreenBtn" class="mini" title="화면 추가"><span data-icon="plus"></span></button>
+        </div>
+        <ul id="screenList" class="rows"></ul>
+      </section>
+      <section>
+        <div class="section-head"><h3>레이어</h3><span class="muted">위가 앞쪽</span></div>
+        <ul id="layerList" class="rows"></ul>
+      </section>
+    </aside>
+
+    <section id="canvasArea" class="canvas-area">
+      <label class="snap-pill" title="8px 격자와 다른 오브젝트에 맞춰 붙이기">
+        <input id="snapToggle" type="checkbox" checked><span data-icon="magnet"></span>자석
+      </label>
+      <div id="viewAs" class="view-as" title="로그인 전/후에 보이는 블록을 나눠서 보기" hidden>
+        <button data-v="guest" class="on">로그인 전</button>
+        <button data-v="member">로그인 후</button>
+      </div>
+      <div class="phone-wrap">
+        <div class="zoom-pill">
+          <button id="zoomOut" title="축소" data-icon="minus"></button>
+          <button id="zoomLabel" title="화면에 맞추기">100%</button>
+          <button id="zoomIn" title="확대" data-icon="plus"></button>
+        </div>
+        <div id="phone" class="phone">
+          <div class="status-bar"><span>9:41</span><span class="status-icons" data-icon="status"></span></div>
+          <div id="phoneScreen" class="phone-screen">
+            <div id="stage" class="editor-stage"></div>
+          </div>
+        </div>
+      </div>
+      <div class="canvas-hint">Delete 삭제 · Ctrl+D 복제 · Ctrl+C/V 복사·붙여넣기 · 방향키 이동</div>
+    </section>
+
+    <aside class="panel right">
+      <div id="props"></div>
+    </aside>
+  </main>
+
+  <div id="previewModal" class="modal" hidden>
+    <div class="modal-bar">
+      <span id="previewTitle"></span>
+      <div class="spacer"></div>
+      <button id="previewRestart" class="ghost">처음부터</button>
+      <button id="previewClose" class="primary">닫기 (Esc)</button>
+    </div>
+    <div class="preview-holder">
+      <div id="previewPhone" class="phone">
+        <div class="status-bar"><span>9:41</span><span class="status-icons" data-icon="status"></span></div>
+        <div id="previewScreen" class="phone-screen"><div id="previewMount"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="welcome" class="welcome-backdrop" hidden>
+    <div class="welcome" role="dialog" aria-labelledby="welcomeTitle">
+      <button id="welcomeClose" class="welcome-close" title="닫기" data-icon="x"></button>
+      <div class="welcome-icon" data-icon="rocket"></div>
+      <h2 id="welcomeTitle">Custorming에 오신 걸 환영해요!</h2>
+      <p class="welcome-sub">세 단계면 나만의 앱을 만들 수 있어요.</p>
+      <ol class="steps">
+        <li><span class="step-num s1">1</span><div><b>오브젝트 고르기</b><span>왼쪽 패널에서 버튼, 이미지, 메시지 창 등을 골라요.</span></div></li>
+        <li><span class="step-num s2">2</span><div><b>끌어다 놓기</b><span>가운데 휴대폰 화면으로 끌어다 원하는 곳에 놓아요.</span></div></li>
+        <li><span class="step-num s3">3</span><div><b>마음대로 꾸미기</b><span>블록을 누르면 오른쪽에서 색, 글꼴, 모양을 바꿀 수 있어요.</span></div></li>
+      </ol>
+      <button id="welcomeGo" class="primary big">좋아요, 만들어 볼게요!</button>
+    </div>
+  </div>
+
+  <div id="authModal" class="welcome-backdrop" hidden>
+    <div class="welcome auth" role="dialog" aria-labelledby="authTitle">
+      <button id="authClose" class="welcome-close" title="닫기" data-icon="x"></button>
+      <div class="welcome-icon" data-icon="user"></div>
+      <h2 id="authTitle">로그인</h2>
+      <p id="authSub" class="welcome-sub">로그인하면 작업이 내 계정에 따로 저장돼요.</p>
+      <div class="segmented auth-tabs">
+        <button type="button" data-mode="login" class="on">로그인</button>
+        <button type="button" data-mode="signup">회원가입</button>
+      </div>
+      <form id="authForm" class="auth-form" novalidate>
+        <label class="field" data-only="signup"><span class="field-label">이름</span><input id="authName" type="text" autocomplete="name" placeholder="홍길동"></label>
+        <label class="field"><span class="field-label">이메일</span><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+        <label class="field"><span class="field-label">비밀번호</span><input id="authPassword" type="password" autocomplete="current-password" placeholder="8자 이상"></label>
+        <label class="field" data-only="signup"><span class="field-label">비밀번호 확인</span><input id="authPassword2" type="password" autocomplete="new-password" placeholder="한 번 더 입력"></label>
+        <div id="authError" class="auth-error" role="alert" hidden></div>
+        <button id="authSubmit" type="submit" class="primary big">로그인</button>
+        <button id="authForgot" type="button" class="later-btn forgot" hidden>비밀번호를 잊으셨나요?</button>
+      </form>
+      <button id="authLater" type="button" class="later-btn">나중에 할게요 — 게스트로 계속하기</button>
+      <p id="authFineprint" class="auth-fineprint"></p>
+    </div>
+  </div>
+
+  <div id="appsModal" class="welcome-backdrop" hidden>
+    <div class="welcome apps" role="dialog" aria-labelledby="appsTitle">
+      <button id="appsClose" class="welcome-close" title="닫기" data-icon="x"></button>
+      <div class="apps-head">
+        <h2 id="appsTitle">내 앱</h2>
+        <span id="appsSync" class="apps-sync" hidden>클라우드와 맞추는 중…</span>
+      </div>
+      <p id="appsWho" class="apps-who"></p>
+      <div id="appsTemplates" class="apps-templates" hidden></div>
+      <div id="appsGrid" class="apps-grid"></div>
+    </div>
+  </div>
+
+  <div id="cloudModal" class="welcome-backdrop" hidden>
+    <div class="welcome cloud" role="dialog" aria-labelledby="cloudTitle">
+      <button id="cloudClose" class="welcome-close" title="닫기" data-icon="x"></button>
+      <div class="welcome-icon" data-icon="cloud"></div>
+      <h2 id="cloudTitle">클라우드 동기화</h2>
+      <p class="welcome-sub">Firebase에 연결하면 로그인한 기기 어디서든 작업을 이어서 할 수 있어요.</p>
+      <div id="cloudFileNote" class="fb-status ok" hidden>js/config.js에 설정이 들어 있어서 모든 기기에서 자동으로 켜져 있어요.</div>
+      <div class="auth-form">
+        <label class="field"><span class="field-label">웹 API 키</span><input id="cloudApiKey" type="text" placeholder="AIzaSy…" spellcheck="false" autocomplete="off"></label>
+        <label class="field"><span class="field-label">프로젝트 ID</span><input id="cloudProjectId" type="text" placeholder="my-app-12345" spellcheck="false" autocomplete="off"></label>
+        <div id="cloudStatus" class="fb-status" hidden></div>
+        <div class="btn-row">
+          <button id="cloudCheck" type="button">연결 확인</button>
+          <button id="cloudOff" type="button">동기화 끄기</button>
+        </div>
+        <button id="cloudSave" type="button" class="primary big">저장하고 켜기</button>
+      </div>
+      <details class="note fb-guide cloud-guide">
+        <summary>Firebase 준비하기 (처음 한 번, 10분)</summary>
+        <ol>
+          <li><a href="https://console.firebase.google.com/" target="_blank" rel="noopener">Firebase 콘솔</a>에서 프로젝트를 만들어요 (무료 Spark 요금제로 충분해요).</li>
+          <li>빌드 → Authentication → 시작하기 → 로그인 방법에서 "이메일/비밀번호"를 켜요.</li>
+          <li>빌드 → Firestore Database → 데이터베이스 만들기 (위치는 asia-northeast3 서울 추천, 프로덕션 모드).</li>
+          <li>Firestore의 "규칙" 탭에 아래 규칙을 붙여넣고 게시해요. 로그인한 본인 작업만 읽고 쓸 수 있게 막아줘요.</li>
+          <li>톱니바퀴 → 프로젝트 설정 → 일반에서 "웹 API 키"와 "프로젝트 ID"를 복사해 위에 넣어요.</li>
+        </ol>
+        <div class="rules-box"><pre id="cloudRules"></pre><button id="copyRules" type="button" class="mini-copy">복사</button></div>
+        <p class="auth-fineprint">여러 기기에서 설정 없이 쓰려면 js/config.js 파일에 같은 값을 적어 두세요.</p>
+      </details>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/runtime.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/templates.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/cloud.js"></script>
+  <script src="js/editor.js"></script>
+</body>
+</html>
