@@ -46,6 +46,37 @@
     setTimeout(() => t.remove(), 2200);
   }
 
+  // 창(모달)과 메뉴를 부드럽게 열고 닫는다. 닫힐 때는 사라지는 애니메이션이 끝난 뒤 숨긴다.
+  function showLayer(node) {
+    node.classList.remove('leaving');
+    node.hidden = false;
+  }
+
+  function hideLayer(node, done) {
+    if (node.hidden) { if (done) done(); return; }
+    if (node.classList.contains('leaving')) return;
+    node.classList.add('leaving');
+    const finish = () => {
+      node.removeEventListener('animationend', onEnd);
+      if (!node.classList.contains('leaving')) return; // 닫히는 도중에 다시 열렸다
+      node.classList.remove('leaving');
+      node.hidden = true;
+      if (done) done();
+    };
+    const onEnd = (e) => { if (e.target === node) finish(); };
+    node.addEventListener('animationend', onEnd);
+    setTimeout(finish, 320); // animationend가 오지 않는 경우를 대비
+  }
+
+  function toggleLayer(node) {
+    if (node.hidden || node.classList.contains('leaving')) showLayer(node);
+    else hideLayer(node);
+  }
+
+  const prefersReducedMotion = () => {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+  };
+
   function clone(o) {
     return JSON.parse(JSON.stringify(o));
   }
@@ -560,7 +591,7 @@
   }
 
   function openApps() {
-    $('#appsModal').hidden = false;
+    showLayer($('#appsModal'));
     $('#appsTemplates').hidden = true;
     renderApps();
     if (cloudUser()) {
@@ -570,7 +601,7 @@
   }
 
   function closeApps() {
-    $('#appsModal').hidden = true;
+    hideLayer($('#appsModal'));
   }
 
   function renderAppsIfOpen() {
@@ -700,10 +731,15 @@
   }
 
   function select(id) {
+    const changed = id !== selectedId;
     selectedId = id;
     renderSelection();
     renderLayers();
     renderProps();
+    // 다른 블록을 고르면 속성 패널이 부드럽게 바뀐다
+    if (changed && !prefersReducedMotion()) {
+      $('#props').animate([{ opacity: 0, transform: 'translateX(8px)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'ease-out' });
+    }
   }
 
   // ---------------------------------------------------------------- 화면(스크린) 관리
@@ -937,13 +973,37 @@
     });
   }
 
+  // 캔버스에 마지막으로 그린 앱·화면 (바뀌었을 때만 전환 애니메이션을 준다)
+  let shownOnCanvas = { app: null, screen: null };
+
+  function animateCanvas(node) {
+    const before = shownOnCanvas;
+    shownOnCanvas = { app: project.id, screen: screenId };
+    if (!before.app || typeof node.animate !== 'function' || prefersReducedMotion()) return;
+    let frames;
+    if (before.app !== project.id) {
+      // 다른 앱을 열었을 때: 살짝 커지며 나타난다
+      frames = [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }];
+    } else if (before.screen !== screenId) {
+      // 다른 화면으로: 목록에서 아래 화면이면 오른쪽에서, 위 화면이면 왼쪽에서 들어온다
+      const order = project.screens.map((sc) => sc.id);
+      const dir = order.indexOf(screenId) >= order.indexOf(before.screen) ? 1 : -1;
+      frames = [{ opacity: 0, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: 'none' }];
+    } else {
+      return;
+    }
+    node.animate(frames, { duration: 260, easing: 'cubic-bezier(.22,.8,.24,1)' });
+  }
+
   function renderCanvas() {
     const stage = $('#stage');
     stage.innerHTML = '';
     RT.styleStage(stage, project);
     const ctx = RT.staticContext(project, screen());
     ctx.viewAs = viewAs;
-    stage.appendChild(RT.renderScreen(screen(), project, ctx));
+    const screenNode = RT.renderScreen(screen(), project, ctx);
+    stage.appendChild(screenNode);
+    animateCanvas(screenNode);
     const hasConditional = project.screens.some((sc) => sc.components.some((c) => c.showWhen));
     $('#viewAs').hidden = !hasConditional;
     stage.appendChild(el('div', { id: 'guides' }));
@@ -1363,7 +1423,10 @@
       field('대표 색', colorControl(t.primary === RT.DEFAULT_THEME.primary ? '' : t.primary, RT.DEFAULT_THEME.primary, setTheme('primary')), '헤더, 버튼, 내 말풍선처럼 색을 "기본"으로 둔 블록에 쓰여요'),
       field('기본 배경색', colorControl(t.bg === RT.DEFAULT_THEME.bg ? '' : t.bg, RT.DEFAULT_THEME.bg, setTheme('bg'))),
       field('기본 글자색', colorControl(t.text === RT.DEFAULT_THEME.text ? '' : t.text, RT.DEFAULT_THEME.text, setTheme('text'))),
-      field('글꼴', font)));
+      field('글꼴', font),
+      field('화면 전환 효과',
+        segmented([['slide', '밀어내기'], ['fade', '페이드'], ['zoom', '확대'], ['none', '없음']], theme.transition || 'slide', (v) => setTheme('transition')(v)),
+        '미리보기와 내보낸 앱에서 화면이 바뀔 때의 움직임이에요. 탭 전환은 항상 부드럽게 겹쳐져요')));
 
     root.appendChild(el('div', { class: 'note' },
       '블록을 누르면 여기서 색, 글꼴, 모양을 바꿀 수 있어요. ',
@@ -1520,8 +1583,8 @@
         return;
       }
       if (e.key === 'Escape' && !($('#moreMenu').hidden && $('#accountMenu').hidden)) {
-        $('#moreMenu').hidden = true;
-        $('#accountMenu').hidden = true;
+        hideLayer($('#moreMenu'));
+        hideLayer($('#accountMenu'));
         return;
       }
       const typing = e.target.closest('input, textarea, select, [contenteditable]');
@@ -1555,7 +1618,7 @@
 
   function openPreview() {
     const modal = $('#previewModal');
-    modal.hidden = false;
+    showLayer(modal);
     $('#previewTitle').textContent = `${project.name || '앱'} 미리보기 — 실제처럼 눌러보세요`;
     startPreview(screenId);
   }
@@ -1573,8 +1636,7 @@
   }
 
   function closePreview() {
-    $('#previewModal').hidden = true;
-    $('#previewMount').innerHTML = '';
+    hideLayer($('#previewModal'), () => { $('#previewMount').innerHTML = ''; });
   }
 
   // ---------------------------------------------------------------- 파일 저장/불러오기/내보내기
@@ -1665,7 +1727,7 @@
 
   function setupMenu() {
     const menu = $('#moreMenu');
-    const item = (iconName, label, fn) => el('button', { onclick: () => { menu.hidden = true; fn(); } }, svgIcon(iconName, 16), label);
+    const item = (iconName, label, fn) => el('button', { onclick: () => { hideLayer(menu); fn(); } }, svgIcon(iconName, 16), label);
     menu.append(
       item('apps', '내 앱 목록', openApps),
       el('hr'),
@@ -1678,8 +1740,8 @@
       item('cloud', '클라우드 동기화 설정', openCloudSettings),
       el('hr'),
       item('help', '시작 안내 다시 보기', openWelcome));
-    $('#moreBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
-    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.menu-wrap')) menu.hidden = true; });
+    $('#moreBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleLayer(menu); });
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.menu-wrap')) hideLayer(menu); });
   }
 
   // ---------------------------------------------------------------- 환영 안내
@@ -1687,12 +1749,12 @@
   const WELCOME_KEY = 'custorming.welcomed';
 
   function openWelcome() {
-    $('#welcome').hidden = false;
+    showLayer($('#welcome'));
     $('#welcomeGo').focus();
   }
 
   function closeWelcome() {
-    $('#welcome').hidden = true;
+    hideLayer($('#welcome'));
     try { localStorage.setItem(WELCOME_KEY, '1'); } catch (e) { /* 저장 못 해도 괜찮음 */ }
   }
 
@@ -1718,11 +1780,11 @@
     $('#cloudOff').hidden = fromFile || !conf;
     $('#cloudFileNote').hidden = !fromFile;
     $('#cloudStatus').hidden = true;
-    $('#cloudModal').hidden = false;
+    showLayer($('#cloudModal'));
   }
 
   function closeCloudSettings() {
-    $('#cloudModal').hidden = true;
+    hideLayer($('#cloudModal'));
   }
 
   function cloudStatus(ok, message) {
@@ -1789,12 +1851,12 @@
     setAuthMode(mode || 'login');
     $('#authForm').reset();
     $('#authError').hidden = true;
-    $('#authModal').hidden = false;
+    showLayer($('#authModal'));
     (authMode === 'signup' ? $('#authName') : $('#authEmail')).focus();
   }
 
   function closeAuth() {
-    $('#authModal').hidden = true;
+    hideLayer($('#authModal'));
   }
 
   function setAuthMode(mode) {
@@ -1863,7 +1925,7 @@
   }
 
   async function logOut() {
-    $('#accountMenu').hidden = true;
+    hideLayer($('#accountMenu'));
     // 아직 못 올린 변경이 있으면 먼저 올려 본다 (실패해도 이 기기에는 남아 있다)
     if (cloudUser() && syncMeta().dirty) await pushCloud();
     AUTH.logOut();
@@ -1890,9 +1952,9 @@
 
   function setupAccount() {
     $('#loginBtn').addEventListener('click', () => openAuth('login'));
-    $('#avatarBtn').addEventListener('click', () => { $('#accountMenu').hidden = !$('#accountMenu').hidden; });
+    $('#avatarBtn').addEventListener('click', () => toggleLayer($('#accountMenu')));
     $('#logoutBtn').addEventListener('click', logOut);
-    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#accountWrap')) $('#accountMenu').hidden = true; });
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#accountWrap')) hideLayer($('#accountMenu')); });
     document.querySelectorAll('.auth-tabs button').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.mode)));
     $('#authForm').addEventListener('submit', submitAuth);
     $('#authClose').addEventListener('click', closeAuth);

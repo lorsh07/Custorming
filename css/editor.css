@@ -397,3 +397,21 @@ button.big { width: 100%; padding: 18px; font-size: 17px; border-radius: 14px; b
 .app-actions { display: flex; gap: 2px; padding: 4px 8px 10px; }
 .app-actions .icon-btn { padding: 6px; color: var(--muted); }
 .app-actions .icon-btn.danger:hover { color: var(--danger); background: #fef2f2; }
+
+/* ------------------------------------------------ 열고 닫는 애니메이션 */
+.modal { animation: fade .2s ease-out; }
+.modal:not(.leaving) #previewPhone { animation: rise .3s cubic-bezier(.22, .8, .24, 1); }
+.welcome-backdrop.leaving, .modal.leaving { animation: fade-out .2s ease-in forwards; pointer-events: none; }
+.welcome-backdrop.leaving .welcome, .modal.leaving #previewPhone { animation: sink .2s ease-in forwards; }
+.menu:not([hidden]) { animation: menu-in .16s cubic-bezier(.22, .8, .24, 1); transform-origin: top right; }
+.menu.leaving { animation: menu-out .12s ease-in forwards; pointer-events: none; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes sink { to { opacity: 0; transform: translateY(10px) scale(.98); } }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+@keyframes menu-out { to { opacity: 0; transform: translateY(-4px) scale(.98); } }
+.toast-msg { animation: toast-in .22s cubic-bezier(.22, .8, .24, 1); }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
