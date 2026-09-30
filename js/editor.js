@@ -12,12 +12,7 @@
   const GRID = 8;
   const SNAP_DIST = 6;
   const MIN_SIZE = 16;
-  const DEVICES = [
-    ['360x740', '기본 폰 (360×740)'],
-    ['390x844', 'iPhone (390×844)'],
-    ['412x915', '큰 안드로이드 (412×915)'],
-    ['768x1024', '태블릿 (768×1024)'],
-  ];
+  const DEVICES = window.CM_DEVICES;
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -885,7 +880,7 @@
 
   function renderAll() {
     $('#appName').value = project.name || '';
-    $('#deviceSelect').value = `${size().w}x${size().h}`;
+    fillDeviceSelect($('#deviceSelect'));
     renderScreens();
     renderLayers();
     renderCanvas();
@@ -1022,8 +1017,9 @@
   function fitZoom() {
     const { w: W, h: H } = size();
     const area = $('#canvasArea');
-    // 휴대폰 테두리(16) + 상태 표시줄(34) + 위아래 여백(72)
-    return Math.max(0.2, Math.min(1, (area.clientWidth - 80) / (W + 16), (area.clientHeight - 122) / H));
+    const more = DEVICES.extra(DEVICES.of(project)); // 기종 틀(테두리·상태 표시줄)이 차지하는 크기
+    // 위아래 여백 72(확대 버튼 자리) + 좌우 여백 80
+    return Math.max(0.15, Math.min(1, (area.clientWidth - 80) / (W + more.w), (area.clientHeight - 88) / (H + more.h)));
   }
 
   function fitCanvas() {
@@ -1031,6 +1027,7 @@
     zoom = zoomMode === 'fit' ? fitZoom() : zoomMode;
     $('#stage').style.transform = `scale(${zoom})`;
     Object.assign($('#phoneScreen').style, { width: W * zoom + 'px', height: H * zoom + 'px' });
+    DEVICES.applyFrame($('#phone'), DEVICES.of(project), zoom, DEVICES.colorOf(project));
     $('#zoomLabel').textContent = Math.round(zoom * 100) + '%';
   }
 
@@ -1428,6 +1425,18 @@
         segmented([['slide', '밀어내기'], ['fade', '페이드'], ['zoom', '확대'], ['none', '없음']], theme.transition || 'slide', (v) => setTheme('transition')(v)),
         '미리보기와 내보낸 앱에서 화면이 바뀔 때의 움직임이에요. 탭 전환은 항상 부드럽게 겹쳐져요')));
 
+    const deviceSel = el('select', { onchange: () => chooseDevice(deviceSel.value) });
+    fillDeviceSelect(deviceSel);
+    const current = DEVICES.colorOf(project);
+    const colors = el('div', { class: 'frame-colors' }, DEVICES.colors.map(([id, hex, label]) => el('button', {
+      class: hex === current ? 'on' : '', title: label, style: { background: hex },
+      onclick: () => { mutate(() => { project.frameColor = id; }); fitCanvas(); renderProps(); },
+    })));
+    const d = DEVICES.of(project);
+    root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '휴대폰 틀' }),
+      field('기종', deviceSel, `${d.w}×${d.h} · 모양: ${{ island: '다이내믹 아일랜드', notch: '노치', punch: '펀치홀', home: '홈 버튼', none: '없음' }[d.cutout]}`),
+      field('틀 색', colors, '편집 화면과 미리보기의 틀 색이에요. 내보낸 앱은 실제 휴대폰에서 틀 없이 화면에 꽉 차게 보여요')));
+
     root.appendChild(el('div', { class: 'note' },
       '블록을 누르면 여기서 색, 글꼴, 모양을 바꿀 수 있어요. ',
       '빈 곳을 누르면 이 화면과 앱 전체 테마를 바꿔요.'));
@@ -1626,7 +1635,10 @@
   function startPreview(fromScreen) {
     const { w: W, h: H } = size();
     const holder = $('.preview-holder');
-    const scale = Math.max(0.2, Math.min(1, (holder.clientWidth - 40) / (W + 16), (holder.clientHeight - 90) / H));
+    const device = DEVICES.of(project);
+    const more = DEVICES.extra(device);
+    const scale = Math.max(0.15, Math.min(1, (holder.clientWidth - 40) / (W + more.w), (holder.clientHeight - 40) / (H + more.h)));
+    DEVICES.applyFrame($('#previewPhone'), device, scale, DEVICES.colorOf(project));
     const mount = $('#previewMount');
     const start = RT.findScreen(project, fromScreen) || project.screens[0];
     $('#previewPhone').style.background = start.bg || RT.themeOf(project).bg;
@@ -1990,24 +2002,69 @@
     });
   }
 
+  // ---------------------------------------------------------------- 휴대폰 기종
+
+  function fillDeviceSelect(select) {
+    select.innerHTML = '';
+    let group = null;
+    DEVICES.list.forEach((d) => {
+      if (!group || group.label !== d.group) {
+        group = el('optgroup', { label: d.group });
+        select.appendChild(group);
+      }
+      group.appendChild(el('option', { value: d.id, text: `${d.label} (${d.w}×${d.h})` }));
+    });
+    select.appendChild(el('optgroup', { label: '직접 입력' },
+      el('option', { value: 'custom', text: DEVICES.of(project).id === 'custom' ? `직접 입력 (${size().w}×${size().h})` : '직접 입력…' })));
+    select.value = DEVICES.of(project).id;
+  }
+
+  function chooseDevice(id) {
+    let w;
+    let h;
+    if (id === 'custom') {
+      const cur = size();
+      const answer = prompt('화면 크기를 "가로x세로"로 입력하세요 (예: 400x860)', `${cur.w}x${cur.h}`);
+      const m = answer && answer.replace(/\s/g, '').match(/^(\d{3,4})[x×*,](\d{3,4})$/i);
+      if (!m) {
+        if (answer) toast('크기는 "400x860"처럼 입력해 주세요');
+        renderAll();
+        return;
+      }
+      w = Math.min(1600, Math.max(240, Number(m[1])));
+      h = Math.min(2400, Math.max(320, Number(m[2])));
+    } else {
+      const d = DEVICES.list.find((x) => x.id === id);
+      if (!d) return;
+      ({ w, h } = d);
+    }
+    resizeProject(w, h, id);
+    renderAll();
+    fillDeviceSelect($('#deviceSelect'));
+    const d = DEVICES.of(project);
+    toast(`${d.id === 'custom' ? '직접 입력한 크기' : d.label} 틀로 바꿨어요 (${w}×${h})`);
+  }
+
+  function resizeProject(w, h, deviceId) {
+    const old = size();
+    mutate(() => {
+      project.size = { w, h };
+      project.device = deviceId;
+      if (old.w === w && old.h === h) return;
+      // 가로로 꽉 찬 오브젝트는 새 너비에 맞추고, 아래에 붙은 오브젝트는 아래에 붙여둔다
+      project.screens.forEach((s) => s.components.forEach((c) => {
+        if (c.x === 0 && c.w === old.w) c.w = w;
+        else if (c.x + c.w > w) c.x = Math.max(0, w - c.w);
+        if (c.y + c.h === old.h) c.y = h - c.h;
+        else if (c.h === old.h - c.y) c.h = h - c.y;
+      }));
+    });
+  }
+
   function setupTopbar() {
     setupMenu();
-    const device = $('#deviceSelect');
-    DEVICES.forEach(([v, label]) => device.appendChild(el('option', { value: v, text: label })));
-    device.addEventListener('change', () => {
-      const [w, h] = device.value.split('x').map(Number);
-      const old = size();
-      mutate(() => {
-        project.size = { w, h };
-        // 가로로 꽉 찬 오브젝트는 새 너비에 맞추고, 아래에 붙은 오브젝트는 아래에 붙여둔다
-        project.screens.forEach((s) => s.components.forEach((c) => {
-          if (c.x === 0 && c.w === old.w) c.w = w;
-          if (c.y + c.h === old.h) c.y = h - c.h;
-          else if (c.h === old.h - c.y) c.h = h - c.y;
-        }));
-      });
-      renderAll();
-    });
+    fillDeviceSelect($('#deviceSelect'));
+    $('#deviceSelect').addEventListener('change', (e) => chooseDevice(e.target.value));
 
     const name = $('#appName');
     name.addEventListener('input', () => mutate(() => { project.name = name.value; }, 'app-name'));
