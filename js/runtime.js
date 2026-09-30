@@ -10,7 +10,7 @@ function createCustormingRuntime() {
   'use strict';
 
   const DEFAULT_SIZE = { w: 360, h: 740 };
-  const DEFAULT_THEME = { primary: '#3b82f6', bg: '#ffffff', text: '#0f172a', font: 'pretendard' };
+  const DEFAULT_THEME = { primary: '#3b82f6', bg: '#ffffff', text: '#0f172a', font: 'pretendard', transition: 'slide' };
   const PRETENDARD_CSS = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css';
   const FONTS = {
     pretendard: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
@@ -32,6 +32,9 @@ function createCustormingRuntime() {
 .cm-chat::-webkit-scrollbar,.cm-list::-webkit-scrollbar{width:0}
 .cm-bubble{max-width:78%;padding:8px 12px;border-radius:16px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
 .cm-new{animation:cm-pop .22s ease-out}
+.cm-fadein{animation:cm-fade .22s ease-out}
+@keyframes cm-fade{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.cm-new,.cm-fadein,.cm-toast{animation-duration:.01s}}
 @keyframes cm-pop{from{opacity:0;transform:translateY(6px)}}
 .cm-press:active{filter:brightness(.92);transform:scale(.98)}
 .cm-row:active{background:rgba(0,0,0,.04)}
@@ -436,7 +439,12 @@ function createCustormingRuntime() {
             background: on ? '#fff' : 'transparent', color: on ? accent : '#94a3b8', boxShadow: on ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
           }, label);
           b.type = 'button';
-          b.onclick = () => { ctx.setState(comp.id + ':mode', m); box.replaceWith(renderers.authForm(p, ctx, comp)); };
+          b.onclick = () => {
+            ctx.setState(comp.id + ':mode', m);
+            const fresh = renderers.authForm(p, ctx, comp);
+            fresh.classList.add('cm-fadein');
+            box.replaceWith(fresh);
+          };
           tabs.appendChild(b);
         });
         box.appendChild(tabs);
@@ -904,10 +912,64 @@ function createCustormingRuntime() {
       return findScreen(project, state.current) || project.screens[0];
     }
 
-    function draw() {
+    // ---- 화면 전환 애니메이션
+    // kind: 'push'(새 화면으로) · 'pop'(뒤로) · 'swap'(탭 전환, 로그인 뒤 이동 등) · 'none'
+    const DURATION = 340;
+    const EASE = 'cubic-bezier(.22,.8,.24,1)';
+
+    function transitionStyle() {
+      const t = theme.transition || 'slide';
+      let reduce = false;
+      try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
+      // 움직임 줄이기를 켠 사람에게는 밀어내기·확대 대신 짧은 페이드만 보여준다
+      return reduce && t !== 'none' ? 'fade' : t;
+    }
+
+    function keyframes(style, kind) {
+      const fadeIn = [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }];
+      const fadeOut = [{ opacity: 1 }, { opacity: 0 }];
+      if (kind === 'swap' || style === 'fade') return { inn: fadeIn, out: fadeOut, newOnTop: true };
+      if (style === 'zoom') {
+        const small = { opacity: 0, transform: 'scale(.94)' };
+        const big = { opacity: 0, transform: 'scale(1.05)' };
+        const shown = { opacity: 1, transform: 'none' };
+        return kind === 'pop'
+          ? { inn: [big, shown], out: [shown, small], newOnTop: false }
+          : { inn: [small, shown], out: [shown, big], newOnTop: true };
+      }
+      // slide: 새 화면이 오른쪽에서 밀고 들어오고, 이전 화면은 살짝 왼쪽으로 물러나며 어두워진다
+      const shade = { transform: 'translateX(-28%)', filter: 'brightness(.88)' };
+      const rest = { transform: 'none', filter: 'none' };
+      const shadow = '-10px 0 30px rgba(15,23,42,.14)';
+      return kind === 'pop'
+        ? { inn: [shade, rest], out: [{ transform: 'none', boxShadow: shadow }, { transform: 'translateX(100%)', boxShadow: shadow }], newOnTop: false }
+        : { inn: [{ transform: 'translateX(100%)', boxShadow: shadow }, { transform: 'none', boxShadow: shadow }], out: [rest, shade], newOnTop: true };
+    }
+
+    function draw(kind) {
       state.chatEls = {};
-      stage.innerHTML = '';
-      stage.appendChild(renderScreen(screen(), project, ctx));
+      const next = renderScreen(screen(), project, ctx);
+      const screens = Array.from(stage.children).filter((n) => n.classList.contains('cm-screen'));
+      const prev = screens.pop();
+      // 앞선 전환이 아직 끝나지 않았으면 그 화면은 바로 치운다
+      screens.forEach((n) => n.remove());
+      const style = transitionStyle();
+      if (!prev || !kind || kind === 'none' || style === 'none' || typeof next.animate !== 'function') {
+        if (prev) prev.remove();
+        stage.appendChild(next);
+        return;
+      }
+      (prev.getAnimations ? prev.getAnimations() : []).forEach((a) => a.cancel());
+      prev.style.pointerEvents = 'none';
+      const f = keyframes(style, kind);
+      if (f.newOnTop) stage.insertBefore(next, prev.nextSibling);
+      else stage.insertBefore(next, prev);
+      const opts = { duration: kind === 'swap' || style === 'fade' ? 240 : DURATION, easing: EASE, fill: 'both' };
+      const enter = next.animate(f.inn, opts);
+      const leave = prev.animate(f.out, opts);
+      enter.onfinish = () => enter.cancel();
+      leave.onfinish = () => prev.remove();
+      leave.oncancel = () => prev.remove();
     }
 
     function go(ref, o) {
@@ -924,19 +986,22 @@ function createCustormingRuntime() {
       if (o.replace) state.history = [];
       else if (state.current && state.current !== target.id) state.history.push(state.current);
       state.current = target.id;
-      draw();
+      draw(o.replace ? 'swap' : 'push');
     }
 
     function back() {
       const prev = state.history.pop();
       state.pending = null;
-      if (prev) { state.current = prev; draw(); }
+      if (prev) { state.current = prev; draw('pop'); }
     }
 
     function toast(msg) {
       const t = h('div', null, msg, 'cm-toast');
       stage.appendChild(t);
-      setTimeout(() => t.remove(), 1800);
+      setTimeout(() => {
+        if (typeof t.animate !== 'function') return t.remove();
+        t.animate([{ opacity: 1 }, { opacity: 0, transform: 'translate(-50%, 6px)' }], { duration: 200, easing: 'ease-in', fill: 'forwards' }).onfinish = () => t.remove();
+      }, 1800);
     }
 
     function chatMessages(comp) {
@@ -981,7 +1046,7 @@ function createCustormingRuntime() {
           if (!auth.user()) return toast('로그인되어 있지 않아요');
           auth.logOut();
           toast('로그아웃했어요');
-          return screen().requireLogin ? go(startId(), { replace: true }) : draw();
+          return screen().requireLogin ? go(startId(), { replace: true }) : draw('swap');
         default: return null;
       }
     }
@@ -1010,7 +1075,7 @@ function createCustormingRuntime() {
         if (!stage.isConnected) return;
         if (result === 'signedOut') {
           if (screen().requireLogin) go(startId(), { replace: true });
-          else draw();
+          else draw('swap');
           toast('로그인이 만료됐어요. 다시 로그인해 주세요');
         } else if (result === 'updated') {
           draw();
