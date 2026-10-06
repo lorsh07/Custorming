@@ -898,7 +898,7 @@
       }
       const wide = def.group === '레이아웃';
       box.appendChild(el('button', {
-        class: wide ? 'wide' : 'tile', draggable: 'true', title: `${def.label} — 끌어다 놓거나 클릭해서 추가`,
+        class: wide ? 'wide' : 'tile', draggable: 'true', title: `${def.label}, 끌어다 놓거나 클릭해서 추가`,
         ondragstart: (e) => {
           e.dataTransfer.setData('text/cm-type', type);
           e.dataTransfer.effectAllowed = 'copy';
@@ -1628,7 +1628,7 @@
   function openPreview() {
     const modal = $('#previewModal');
     showLayer(modal);
-    $('#previewTitle').textContent = `${project.name || '앱'} 미리보기 — 실제처럼 눌러보세요`;
+    $('#previewTitle').textContent = `${project.name || '앱'} 미리보기 · 실제처럼 눌러보세요`;
     startPreview(screenId);
   }
 
