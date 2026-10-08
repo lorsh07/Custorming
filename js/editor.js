@@ -12,12 +12,7 @@
   const GRID = 8;
   const SNAP_DIST = 6;
   const MIN_SIZE = 16;
-  const DEVICES = [
-    ['360x740', '기본 폰 (360×740)'],
-    ['390x844', 'iPhone (390×844)'],
-    ['412x915', '큰 안드로이드 (412×915)'],
-    ['768x1024', '태블릿 (768×1024)'],
-  ];
+  const DEVICES = window.CM_DEVICES;
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -45,6 +40,37 @@
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2200);
   }
+
+  // 창(모달)과 메뉴를 부드럽게 열고 닫는다. 닫힐 때는 사라지는 애니메이션이 끝난 뒤 숨긴다.
+  function showLayer(node) {
+    node.classList.remove('leaving');
+    node.hidden = false;
+  }
+
+  function hideLayer(node, done) {
+    if (node.hidden) { if (done) done(); return; }
+    if (node.classList.contains('leaving')) return;
+    node.classList.add('leaving');
+    const finish = () => {
+      node.removeEventListener('animationend', onEnd);
+      if (!node.classList.contains('leaving')) return; // 닫히는 도중에 다시 열렸다
+      node.classList.remove('leaving');
+      node.hidden = true;
+      if (done) done();
+    };
+    const onEnd = (e) => { if (e.target === node) finish(); };
+    node.addEventListener('animationend', onEnd);
+    setTimeout(finish, 320); // animationend가 오지 않는 경우를 대비
+  }
+
+  function toggleLayer(node) {
+    if (node.hidden || node.classList.contains('leaving')) showLayer(node);
+    else hideLayer(node);
+  }
+
+  const prefersReducedMotion = () => {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+  };
 
   function clone(o) {
     return JSON.parse(JSON.stringify(o));
@@ -560,7 +586,7 @@
   }
 
   function openApps() {
-    $('#appsModal').hidden = false;
+    showLayer($('#appsModal'));
     $('#appsTemplates').hidden = true;
     renderApps();
     if (cloudUser()) {
@@ -570,7 +596,7 @@
   }
 
   function closeApps() {
-    $('#appsModal').hidden = true;
+    hideLayer($('#appsModal'));
   }
 
   function renderAppsIfOpen() {
@@ -700,10 +726,15 @@
   }
 
   function select(id) {
+    const changed = id !== selectedId;
     selectedId = id;
     renderSelection();
     renderLayers();
     renderProps();
+    // 다른 블록을 고르면 속성 패널이 부드럽게 바뀐다
+    if (changed && !prefersReducedMotion()) {
+      $('#props').animate([{ opacity: 0, transform: 'translateX(8px)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'ease-out' });
+    }
   }
 
   // ---------------------------------------------------------------- 화면(스크린) 관리
@@ -849,7 +880,7 @@
 
   function renderAll() {
     $('#appName').value = project.name || '';
-    $('#deviceSelect').value = `${size().w}x${size().h}`;
+    fillDeviceSelect($('#deviceSelect'));
     renderScreens();
     renderLayers();
     renderCanvas();
@@ -867,7 +898,7 @@
       }
       const wide = def.group === '레이아웃';
       box.appendChild(el('button', {
-        class: wide ? 'wide' : 'tile', draggable: 'true', title: `${def.label} — 끌어다 놓거나 클릭해서 추가`,
+        class: wide ? 'wide' : 'tile', draggable: 'true', title: `${def.label}, 끌어다 놓거나 클릭해서 추가`,
         ondragstart: (e) => {
           e.dataTransfer.setData('text/cm-type', type);
           e.dataTransfer.effectAllowed = 'copy';
@@ -937,13 +968,37 @@
     });
   }
 
+  // 캔버스에 마지막으로 그린 앱·화면 (바뀌었을 때만 전환 애니메이션을 준다)
+  let shownOnCanvas = { app: null, screen: null };
+
+  function animateCanvas(node) {
+    const before = shownOnCanvas;
+    shownOnCanvas = { app: project.id, screen: screenId };
+    if (!before.app || typeof node.animate !== 'function' || prefersReducedMotion()) return;
+    let frames;
+    if (before.app !== project.id) {
+      // 다른 앱을 열었을 때: 살짝 커지며 나타난다
+      frames = [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }];
+    } else if (before.screen !== screenId) {
+      // 다른 화면으로: 목록에서 아래 화면이면 오른쪽에서, 위 화면이면 왼쪽에서 들어온다
+      const order = project.screens.map((sc) => sc.id);
+      const dir = order.indexOf(screenId) >= order.indexOf(before.screen) ? 1 : -1;
+      frames = [{ opacity: 0, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: 'none' }];
+    } else {
+      return;
+    }
+    node.animate(frames, { duration: 260, easing: 'cubic-bezier(.22,.8,.24,1)' });
+  }
+
   function renderCanvas() {
     const stage = $('#stage');
     stage.innerHTML = '';
     RT.styleStage(stage, project);
     const ctx = RT.staticContext(project, screen());
     ctx.viewAs = viewAs;
-    stage.appendChild(RT.renderScreen(screen(), project, ctx));
+    const screenNode = RT.renderScreen(screen(), project, ctx);
+    stage.appendChild(screenNode);
+    animateCanvas(screenNode);
     const hasConditional = project.screens.some((sc) => sc.components.some((c) => c.showWhen));
     $('#viewAs').hidden = !hasConditional;
     stage.appendChild(el('div', { id: 'guides' }));
@@ -962,8 +1017,9 @@
   function fitZoom() {
     const { w: W, h: H } = size();
     const area = $('#canvasArea');
-    // 휴대폰 테두리(16) + 상태 표시줄(34) + 위아래 여백(72)
-    return Math.max(0.2, Math.min(1, (area.clientWidth - 80) / (W + 16), (area.clientHeight - 122) / H));
+    const more = DEVICES.extra(DEVICES.of(project)); // 기종 틀(테두리·상태 표시줄)이 차지하는 크기
+    // 위아래 여백 72(확대 버튼 자리) + 좌우 여백 80
+    return Math.max(0.15, Math.min(1, (area.clientWidth - 80) / (W + more.w), (area.clientHeight - 88) / (H + more.h)));
   }
 
   function fitCanvas() {
@@ -971,6 +1027,7 @@
     zoom = zoomMode === 'fit' ? fitZoom() : zoomMode;
     $('#stage').style.transform = `scale(${zoom})`;
     Object.assign($('#phoneScreen').style, { width: W * zoom + 'px', height: H * zoom + 'px' });
+    DEVICES.applyFrame($('#phone'), DEVICES.of(project), zoom, DEVICES.colorOf(project));
     $('#zoomLabel').textContent = Math.round(zoom * 100) + '%';
   }
 
@@ -1363,7 +1420,22 @@
       field('대표 색', colorControl(t.primary === RT.DEFAULT_THEME.primary ? '' : t.primary, RT.DEFAULT_THEME.primary, setTheme('primary')), '헤더, 버튼, 내 말풍선처럼 색을 "기본"으로 둔 블록에 쓰여요'),
       field('기본 배경색', colorControl(t.bg === RT.DEFAULT_THEME.bg ? '' : t.bg, RT.DEFAULT_THEME.bg, setTheme('bg'))),
       field('기본 글자색', colorControl(t.text === RT.DEFAULT_THEME.text ? '' : t.text, RT.DEFAULT_THEME.text, setTheme('text'))),
-      field('글꼴', font)));
+      field('글꼴', font),
+      field('화면 전환 효과',
+        segmented([['slide', '밀어내기'], ['fade', '페이드'], ['zoom', '확대'], ['none', '없음']], theme.transition || 'slide', (v) => setTheme('transition')(v)),
+        '미리보기와 내보낸 앱에서 화면이 바뀔 때의 움직임이에요. 탭 전환은 항상 부드럽게 겹쳐져요')));
+
+    const deviceSel = el('select', { onchange: () => chooseDevice(deviceSel.value) });
+    fillDeviceSelect(deviceSel);
+    const current = DEVICES.colorOf(project);
+    const colors = el('div', { class: 'frame-colors' }, DEVICES.colors.map(([id, hex, label]) => el('button', {
+      class: hex === current ? 'on' : '', title: label, style: { background: hex },
+      onclick: () => { mutate(() => { project.frameColor = id; }); fitCanvas(); renderProps(); },
+    })));
+    const d = DEVICES.of(project);
+    root.appendChild(el('div', { class: 'props-section' }, el('h4', { text: '휴대폰 틀' }),
+      field('기종', deviceSel, `${d.w}×${d.h} · 모양: ${{ island: '다이내믹 아일랜드', notch: '노치', punch: '펀치홀', home: '홈 버튼', none: '없음' }[d.cutout]}`),
+      field('틀 색', colors, '편집 화면과 미리보기의 틀 색이에요. 내보낸 앱은 실제 휴대폰에서 틀 없이 화면에 꽉 차게 보여요')));
 
     root.appendChild(el('div', { class: 'note' },
       '블록을 누르면 여기서 색, 글꼴, 모양을 바꿀 수 있어요. ',
@@ -1520,8 +1592,8 @@
         return;
       }
       if (e.key === 'Escape' && !($('#moreMenu').hidden && $('#accountMenu').hidden)) {
-        $('#moreMenu').hidden = true;
-        $('#accountMenu').hidden = true;
+        hideLayer($('#moreMenu'));
+        hideLayer($('#accountMenu'));
         return;
       }
       const typing = e.target.closest('input, textarea, select, [contenteditable]');
@@ -1555,15 +1627,18 @@
 
   function openPreview() {
     const modal = $('#previewModal');
-    modal.hidden = false;
-    $('#previewTitle').textContent = `${project.name || '앱'} 미리보기 — 실제처럼 눌러보세요`;
+    showLayer(modal);
+    $('#previewTitle').textContent = `${project.name || '앱'} 미리보기 · 실제처럼 눌러보세요`;
     startPreview(screenId);
   }
 
   function startPreview(fromScreen) {
     const { w: W, h: H } = size();
     const holder = $('.preview-holder');
-    const scale = Math.max(0.2, Math.min(1, (holder.clientWidth - 40) / (W + 16), (holder.clientHeight - 90) / H));
+    const device = DEVICES.of(project);
+    const more = DEVICES.extra(device);
+    const scale = Math.max(0.15, Math.min(1, (holder.clientWidth - 40) / (W + more.w), (holder.clientHeight - 40) / (H + more.h)));
+    DEVICES.applyFrame($('#previewPhone'), device, scale, DEVICES.colorOf(project));
     const mount = $('#previewMount');
     const start = RT.findScreen(project, fromScreen) || project.screens[0];
     $('#previewPhone').style.background = start.bg || RT.themeOf(project).bg;
@@ -1573,8 +1648,7 @@
   }
 
   function closePreview() {
-    $('#previewModal').hidden = true;
-    $('#previewMount').innerHTML = '';
+    hideLayer($('#previewModal'), () => { $('#previewMount').innerHTML = ''; });
   }
 
   // ---------------------------------------------------------------- 파일 저장/불러오기/내보내기
@@ -1665,7 +1739,7 @@
 
   function setupMenu() {
     const menu = $('#moreMenu');
-    const item = (iconName, label, fn) => el('button', { onclick: () => { menu.hidden = true; fn(); } }, svgIcon(iconName, 16), label);
+    const item = (iconName, label, fn) => el('button', { onclick: () => { hideLayer(menu); fn(); } }, svgIcon(iconName, 16), label);
     menu.append(
       item('apps', '내 앱 목록', openApps),
       el('hr'),
@@ -1678,8 +1752,8 @@
       item('cloud', '클라우드 동기화 설정', openCloudSettings),
       el('hr'),
       item('help', '시작 안내 다시 보기', openWelcome));
-    $('#moreBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
-    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.menu-wrap')) menu.hidden = true; });
+    $('#moreBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleLayer(menu); });
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.menu-wrap')) hideLayer(menu); });
   }
 
   // ---------------------------------------------------------------- 환영 안내
@@ -1687,12 +1761,12 @@
   const WELCOME_KEY = 'custorming.welcomed';
 
   function openWelcome() {
-    $('#welcome').hidden = false;
+    showLayer($('#welcome'));
     $('#welcomeGo').focus();
   }
 
   function closeWelcome() {
-    $('#welcome').hidden = true;
+    hideLayer($('#welcome'));
     try { localStorage.setItem(WELCOME_KEY, '1'); } catch (e) { /* 저장 못 해도 괜찮음 */ }
   }
 
@@ -1718,11 +1792,11 @@
     $('#cloudOff').hidden = fromFile || !conf;
     $('#cloudFileNote').hidden = !fromFile;
     $('#cloudStatus').hidden = true;
-    $('#cloudModal').hidden = false;
+    showLayer($('#cloudModal'));
   }
 
   function closeCloudSettings() {
-    $('#cloudModal').hidden = true;
+    hideLayer($('#cloudModal'));
   }
 
   function cloudStatus(ok, message) {
@@ -1789,12 +1863,12 @@
     setAuthMode(mode || 'login');
     $('#authForm').reset();
     $('#authError').hidden = true;
-    $('#authModal').hidden = false;
+    showLayer($('#authModal'));
     (authMode === 'signup' ? $('#authName') : $('#authEmail')).focus();
   }
 
   function closeAuth() {
-    $('#authModal').hidden = true;
+    hideLayer($('#authModal'));
   }
 
   function setAuthMode(mode) {
@@ -1863,7 +1937,7 @@
   }
 
   async function logOut() {
-    $('#accountMenu').hidden = true;
+    hideLayer($('#accountMenu'));
     // 아직 못 올린 변경이 있으면 먼저 올려 본다 (실패해도 이 기기에는 남아 있다)
     if (cloudUser() && syncMeta().dirty) await pushCloud();
     AUTH.logOut();
@@ -1890,9 +1964,9 @@
 
   function setupAccount() {
     $('#loginBtn').addEventListener('click', () => openAuth('login'));
-    $('#avatarBtn').addEventListener('click', () => { $('#accountMenu').hidden = !$('#accountMenu').hidden; });
+    $('#avatarBtn').addEventListener('click', () => toggleLayer($('#accountMenu')));
     $('#logoutBtn').addEventListener('click', logOut);
-    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#accountWrap')) $('#accountMenu').hidden = true; });
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#accountWrap')) hideLayer($('#accountMenu')); });
     document.querySelectorAll('.auth-tabs button').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.mode)));
     $('#authForm').addEventListener('submit', submitAuth);
     $('#authClose').addEventListener('click', closeAuth);
@@ -1928,24 +2002,69 @@
     });
   }
 
+  // ---------------------------------------------------------------- 휴대폰 기종
+
+  function fillDeviceSelect(select) {
+    select.innerHTML = '';
+    let group = null;
+    DEVICES.list.forEach((d) => {
+      if (!group || group.label !== d.group) {
+        group = el('optgroup', { label: d.group });
+        select.appendChild(group);
+      }
+      group.appendChild(el('option', { value: d.id, text: `${d.label} (${d.w}×${d.h})` }));
+    });
+    select.appendChild(el('optgroup', { label: '직접 입력' },
+      el('option', { value: 'custom', text: DEVICES.of(project).id === 'custom' ? `직접 입력 (${size().w}×${size().h})` : '직접 입력…' })));
+    select.value = DEVICES.of(project).id;
+  }
+
+  function chooseDevice(id) {
+    let w;
+    let h;
+    if (id === 'custom') {
+      const cur = size();
+      const answer = prompt('화면 크기를 "가로x세로"로 입력하세요 (예: 400x860)', `${cur.w}x${cur.h}`);
+      const m = answer && answer.replace(/\s/g, '').match(/^(\d{3,4})[x×*,](\d{3,4})$/i);
+      if (!m) {
+        if (answer) toast('크기는 "400x860"처럼 입력해 주세요');
+        renderAll();
+        return;
+      }
+      w = Math.min(1600, Math.max(240, Number(m[1])));
+      h = Math.min(2400, Math.max(320, Number(m[2])));
+    } else {
+      const d = DEVICES.list.find((x) => x.id === id);
+      if (!d) return;
+      ({ w, h } = d);
+    }
+    resizeProject(w, h, id);
+    renderAll();
+    fillDeviceSelect($('#deviceSelect'));
+    const d = DEVICES.of(project);
+    toast(`${d.id === 'custom' ? '직접 입력한 크기' : d.label} 틀로 바꿨어요 (${w}×${h})`);
+  }
+
+  function resizeProject(w, h, deviceId) {
+    const old = size();
+    mutate(() => {
+      project.size = { w, h };
+      project.device = deviceId;
+      if (old.w === w && old.h === h) return;
+      // 가로로 꽉 찬 오브젝트는 새 너비에 맞추고, 아래에 붙은 오브젝트는 아래에 붙여둔다
+      project.screens.forEach((s) => s.components.forEach((c) => {
+        if (c.x === 0 && c.w === old.w) c.w = w;
+        else if (c.x + c.w > w) c.x = Math.max(0, w - c.w);
+        if (c.y + c.h === old.h) c.y = h - c.h;
+        else if (c.h === old.h - c.y) c.h = h - c.y;
+      }));
+    });
+  }
+
   function setupTopbar() {
     setupMenu();
-    const device = $('#deviceSelect');
-    DEVICES.forEach(([v, label]) => device.appendChild(el('option', { value: v, text: label })));
-    device.addEventListener('change', () => {
-      const [w, h] = device.value.split('x').map(Number);
-      const old = size();
-      mutate(() => {
-        project.size = { w, h };
-        // 가로로 꽉 찬 오브젝트는 새 너비에 맞추고, 아래에 붙은 오브젝트는 아래에 붙여둔다
-        project.screens.forEach((s) => s.components.forEach((c) => {
-          if (c.x === 0 && c.w === old.w) c.w = w;
-          if (c.y + c.h === old.h) c.y = h - c.h;
-          else if (c.h === old.h - c.y) c.h = h - c.y;
-        }));
-      });
-      renderAll();
-    });
+    fillDeviceSelect($('#deviceSelect'));
+    $('#deviceSelect').addEventListener('change', (e) => chooseDevice(e.target.value));
 
     const name = $('#appName');
     name.addEventListener('input', () => mutate(() => { project.name = name.value; }, 'app-name'));
